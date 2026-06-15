@@ -1,7 +1,8 @@
 """The real backend loader: dispatch a registry entry to its MLX backend and measure
 its resident footprint via MLX memory introspection.
 
-`lm` (M2/M3), `embedding`, and `rerank` (M5) are served. `vlm` lands in M6.
+All registry model types are served: `lm` (M2/M3), `embedding` and `rerank` (M5),
+`vlm` (M6).
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ class ModelTypeUnsupported(Exception):
     """Backend for this model type is not built yet."""
 
 
-_MILESTONE = {"vlm": "M6"}
+_MILESTONE: dict[str, str] = {}
 
 
 def make_loader(
@@ -93,6 +94,12 @@ def make_loader(
             from crucible.backends.rerank import MLXRerankEngine
 
             engine = MLXRerankEngine(entry.path, entry.served_name, mem)
+            return engine, engine.nbytes
+
+        if entry.type == "vlm":
+            from crucible.backends.vision import MLXVLMEngine
+
+            engine = MLXVLMEngine(entry.path, entry.served_name, mem)
             return engine, engine.nbytes
 
         milestone = _MILESTONE.get(entry.type, "a later milestone")

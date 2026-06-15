@@ -82,6 +82,10 @@ class ModelManager:
         with self._lock:
             return list(self._resident)
 
+    def first_of_type(self, model_type: str) -> str | None:
+        """The served_name of the first registered model of a given type, if any."""
+        return next((n for n, e in self._entries.items() if e.type == model_type), None)
+
     def resident_bytes(self) -> int:
         with self._lock:
             return self._resident_bytes()

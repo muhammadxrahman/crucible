@@ -9,6 +9,7 @@ dependencies = [
     "mlx>=0.30",
     "mlx-embeddings>=0.1.0",
     "mlx-lm>=0.28",
+    "mlx-vlm>=0.6.3",
     "prometheus-client>=0.21",
     "pydantic>=2.11",
     "pypdf>=6.13.2",

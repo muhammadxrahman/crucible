@@ -90,7 +90,7 @@ Build:
 
 Acceptance: post an image and a question, get an accurate answer; run a document-QA or screenshot-to-structure demo; multi-turn over one image reuses cached vision features (visible in metrics).
 
-Tradeoff: VLM batching is more limited than text (prefix caching for VLMs is constrained), so set conservative VLM concurrency.
+Tradeoff: VLM batching is more limited than text (prefix caching for VLMs is constrained), so set conservative VLM concurrency. The VLM engine runs on a single owned thread, which both keeps MLX arrays thread-affine and serializes VLM work to that conservative concurrency. Vision caching is at the image-materialization level (the same image across turns is decoded once, keyed by content hash, surfaced as `crucible_vision_cache_hits`); mlx-vlm 0.6.3 does not cleanly expose cross-turn vision-tower KV reuse, whose `cached_tokens` signal is surfaced for when a model or version does support it.
 
 ## M7: LoRA fine-tuning and adapter serving
 Goal: fine-tune on local data and serve the adapter.

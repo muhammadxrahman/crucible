@@ -105,12 +105,24 @@ def create_app(manager: ModelManager, runtime: RuntimeProfile, rag=None) -> Fast
 
     @app.post("/v1/chat/completions")
     def chat_completions(req: ChatCompletionRequest):
-        engine, miss = _resolve(manager, req.model)
-        if miss:
-            return miss
+        from crucible.backends.images import extract_images
+
+        raw = [{"role": m.role, "content": m.content} for m in req.messages]
+        images = extract_images(raw)
         params = req.sampling(DEFAULT_MAX_TOKENS)
-        messages = req.rendered_messages()
-        events = _observe(engine.stream(messages, params), metrics, req.model)
+
+        if images:  # image-bearing requests route to a VLM (M6)
+            name, engine, miss = _resolve_vision(manager, req.model)
+            if miss:
+                return miss
+            stream = engine.stream_vision(raw, params, images)
+        else:
+            engine, miss = _resolve(manager, req.model)
+            if miss:
+                return miss
+            stream = engine.stream(req.rendered_messages(), params)
+
+        events = _observe(stream, metrics, req.model)
         if req.stream:
             return StreamingResponse(
                 _sse(payloads.chat_stream(events, req.model)),
@@ -206,6 +218,36 @@ def create_app(manager: ModelManager, runtime: RuntimeProfile, rag=None) -> Fast
         return JSONResponse({"documents": rag.documents()})
 
     return app
+
+
+def _resolve_vision(manager: ModelManager, model: str):
+    """Resolve an engine for an image request: the named model if it is a VLM, else the
+    first registered VLM. Returns (served_name, engine, error_response)."""
+    try:
+        named_type = manager.entry(model).type
+    except UnknownModel:
+        named_type = None
+    name = model if named_type == "vlm" else manager.first_of_type("vlm")
+    if name is None:
+        return (
+            None,
+            None,
+            JSONResponse(
+                status_code=400,
+                content=payloads.error("no vision model is configured", "no_vision_model"),
+            ),
+        )
+    try:
+        engine = manager.acquire(name)
+    except (UnknownModel, ModelTypeUnsupported) as e:
+        return (
+            None,
+            None,
+            JSONResponse(status_code=400, content=payloads.error(str(e), "model_type_error")),
+        )
+    if not hasattr(engine, "stream_vision"):
+        return None, None, _type_error(name, "vision")
+    return name, engine, None
 
 
 def _type_error(model: str, expected: str) -> JSONResponse:

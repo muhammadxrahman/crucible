@@ -254,9 +254,10 @@ def test_observability_serves_dashboard_html() -> None:
     assert "<title>Crucible" in r.text
 
 
-def test_vision_parts_flatten_to_text() -> None:
-    c, engine = make_client()
-    c.post(
+def test_image_request_without_vision_model_is_rejected() -> None:
+    # M6: image-bearing requests route to a VLM; a text-only deployment rejects them.
+    c, _ = make_client()
+    r = c.post(
         "/v1/chat/completions",
         json={
             "model": "primary",
@@ -265,11 +266,11 @@ def test_vision_parts_flatten_to_text() -> None:
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "describe"},
-                        {"type": "image_url", "image_url": {"url": "data:..."}},
+                        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}},
                     ],
                 }
             ],
         },
     )
-    # image parts dropped until M6; text preserved
-    assert engine.last_messages[0]["content"] == "describe"
+    assert r.status_code == 400
+    assert r.json()["error"]["type"] == "no_vision_model"

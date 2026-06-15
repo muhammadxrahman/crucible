@@ -11,12 +11,12 @@ Docker is used only for stateless CPU side-services (Prometheus, Grafana). See
 
 ## Status
 
-Milestone **M5** (RAG). Ingest local documents (text, markdown, PDF), then answer with
-grounded citations: dense retrieval over an in-process vector store, an optional
-cross-encoder rerank, and grounded generation. `/v1/embeddings`, `/v1/rerank`, and
-`/rag/{ingest,query,documents}`, all local with no network access. Builds on M4
-(observability + benchmarking), M3 (continuous batching + prefix KV-cache), M2 (model
-manager), and M1 (OpenAI-compatible gateway). See `docs/roadmap.md`.
+Milestone **M6** (vision). Image-plus-text requests via the OpenAI vision shape
+(`image_url`, HTTP or base64): image-bearing requests route to a VLM (`mlx-vlm`),
+text-only to the text model, with an image cache reused across turns. Plus M5 (RAG:
+embeddings, vector store, two-stage retrieval, grounded citations), M4 (observability +
+benchmarking), M3 (continuous batching + prefix KV-cache), M2 (model manager), and M1
+(OpenAI-compatible gateway). See `docs/roadmap.md`.
 
 ## Observability
 

@@ -28,15 +28,22 @@ _LAT_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30)
 
 
 def _aggregate(resident_stats: dict[str, dict]) -> dict:
-    q = b = kv = hits = misses = 0
+    q = b = kv = hits = misses = vision_hits = 0
     for s in resident_stats.values():
         q += s.get("queue_depth", 0)
         b += s.get("batch_size", 0)
         kv += s.get("kv_cache_bytes", 0)
         hits += s.get("prefix_hits", 0)
         misses += s.get("prefix_misses", 0)
+        vision_hits += s.get("vision_cache_hits", 0)
     ratio = hits / (hits + misses) if (hits + misses) else 0.0
-    return {"queue_depth": q, "batch_size": b, "kv_cache_bytes": kv, "prefix_hit_ratio": ratio}
+    return {
+        "queue_depth": q,
+        "batch_size": b,
+        "kv_cache_bytes": kv,
+        "prefix_hit_ratio": ratio,
+        "vision_cache_hits": vision_hits,
+    }
 
 
 class Metrics:
@@ -75,6 +82,7 @@ class Metrics:
         self._g_evict = Gauge("crucible_evictions_total", "Model evictions", registry=r)
         self._g_hit = Gauge("crucible_prefix_hit_ratio", "Prefix cache hit ratio", registry=r)
         self._g_kv = Gauge("crucible_kv_cache_bytes", "KV cache bytes", registry=r)
+        self._g_vision = Gauge("crucible_vision_cache_hits", "Vision image-cache hits", registry=r)
 
         self._cur = {
             "prefill_tps": 0.0,
@@ -86,6 +94,7 @@ class Metrics:
             "evictions": 0,
             "prefix_hit_ratio": 0.0,
             "kv_cache_bytes": 0,
+            "vision_cache_hits": 0,
             "requests_total": 0,
         }
         self._per_model: dict[str, dict] = {}
@@ -126,6 +135,7 @@ class Metrics:
         self._g_hit.set(agg["prefix_hit_ratio"])
         self._g_resident.set(resident)
         self._g_evict.set(evictions)
+        self._g_vision.set(agg["vision_cache_hits"])
         with self._lock:
             self._cur.update(
                 queue_depth=agg["queue_depth"],
@@ -134,6 +144,7 @@ class Metrics:
                 evictions=evictions,
                 prefix_hit_ratio=round(agg["prefix_hit_ratio"], 3),
                 kv_cache_bytes=agg["kv_cache_bytes"],
+                vision_cache_hits=agg["vision_cache_hits"],
             )
             self._ring.append(
                 {
