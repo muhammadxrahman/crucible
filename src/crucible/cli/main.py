@@ -63,14 +63,13 @@ def _not_yet(name: str, milestone: str) -> None:
 @app.command()
 def serve(
     config: Path = typer.Option(DEFAULT_CONFIG, "--config", "-c", help="Path to models.yaml."),
-    model: str = typer.Option("", "--model", "-m", help="served_name to load (default: first lm)."),
     host: str = typer.Option("", "--host", help="Override server.host."),
     port: int = typer.Option(0, "--port", help="Override server.port."),
 ) -> None:
-    """Start the OpenAI-compatible gateway on one text model (M1)."""
+    """Start the OpenAI-compatible gateway over the model manager (M2)."""
     import uvicorn
 
-    from crucible.backends.text import MLXTextEngine
+    from crucible.manager import ModelManager, make_loader, resolve_runtime
     from crucible.server import create_app
 
     try:
@@ -79,36 +78,30 @@ def serve(
         typer.secho(f"config error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
 
-    entry = _pick_text_model(reg, model)
-    if entry is None:
-        typer.secho(
-            "no text (type: lm) model to serve; add one to the registry or pass --model.",
-            fg=typer.colors.RED,
-            err=True,
-        )
+    if not reg.models:
+        typer.secho("registry declares no models to serve.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
 
     hw = detect()
     active = resolve_profile(reg.profile, hw.total_gb)
+    runtime = resolve_runtime(reg, active, hw.budget_gb)
     bind_host = host or reg.server.host
     bind_port = port or reg.server.port
 
-    typer.secho(f"loading '{entry.served_name}' ({entry.path}) ...", fg=typer.colors.CYAN)
-    engine = MLXTextEngine(entry.path, entry.served_name)
-    application = create_app(engine, active)
+    manager = ModelManager(reg, runtime, make_loader())
     typer.secho(
-        f"serving '{entry.served_name}' on http://{bind_host}:{bind_port} [profile: {active}]",
+        f"profile {active}: ceiling {runtime.ceiling_gb} GB, "
+        f"single_resident={runtime.single_resident}",
+        fg=typer.colors.CYAN,
+    )
+    manager.warmup()  # eagerly load pinned models
+    application = create_app(manager, runtime)
+    typer.secho(
+        f"serving {len(reg.models)} model(s) on http://{bind_host}:{bind_port} "
+        f"[resident: {manager.resident_models() or 'none (lazy)'}]",
         fg=typer.colors.GREEN,
     )
     uvicorn.run(application, host=bind_host, port=bind_port, log_level="info")
-
-
-def _pick_text_model(reg, name: str):  # noqa: ANN001
-    """Resolve the text model: explicit served_name, else first pinned lm, else first lm."""
-    lms = [m for m in reg.models if m.type == "lm"]
-    if name:
-        return next((m for m in lms if m.served_name == name), None)
-    return next((m for m in lms if m.pin), None) or (lms[0] if lms else None)
 
 
 @app.command()

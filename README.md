@@ -11,9 +11,11 @@ Docker is used only for stateless CPU side-services (Prometheus, Grafana). See
 
 ## Status
 
-Milestone **M1** (text inference server). OpenAI-compatible `/v1/chat/completions`
-(streaming + non-streaming), `/v1/completions`, `/v1/models`, `/healthz` over one MLX
-text model. See `docs/roadmap.md`.
+Milestone **M2** (model manager). Serves multiple models from one process: routes by the
+`model` field, loads and evicts by LRU against the profile memory ceiling, honors pins and
+per-model TTL, and exposes `/admin/models/{load,unload,pin}`. OpenAI-compatible
+`/v1/chat/completions` (streaming + non-streaming), `/v1/completions`, `/v1/models`,
+`/healthz`. See `docs/roadmap.md`.
 
 ## Setup
 

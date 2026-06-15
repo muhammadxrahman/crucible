@@ -40,6 +40,28 @@ def model_budget_gb(total_gb: float) -> float:
     return max(0.0, total_gb - _OS_RESERVE_GB - working_set_gb(total_gb))
 
 
+# Tiers that default to a single resident model (small memory). Larger tiers default
+# to multi-resident. A config profile entry overrides these defaults (docs/models.md).
+_SINGLE_RESIDENT_TIERS = frozenset({"air16", "base24", "pro32"})
+_NO_VISION_TIERS = frozenset({"air16"})
+
+
+def default_single_resident(profile: str) -> bool:
+    return profile in _SINGLE_RESIDENT_TIERS
+
+
+def default_vision(profile: str) -> bool:
+    return profile not in _NO_VISION_TIERS
+
+
+def default_context(profile: str) -> int:
+    return 8192 if profile in _SINGLE_RESIDENT_TIERS else 32768
+
+
+def default_kv_bits(profile: str) -> int:
+    return 4 if profile in _SINGLE_RESIDENT_TIERS else 8
+
+
 def select_profile(total_gb: float) -> str:
     """Highest tier whose minimum total memory fits the detected machine.
 

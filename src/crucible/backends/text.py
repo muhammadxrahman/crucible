@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+import mlx.core as mx
 from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
 
@@ -21,6 +22,19 @@ class MLXTextEngine:
         self.model_path = model_path
         self.served_name = served_name
         self._model, self._tokenizer = load(model_path)
+
+    def materialize(self) -> None:
+        """Force weight allocation so resident memory can be measured honestly.
+
+        mlx-lm loads weights lazily; evaluating the parameters realizes them.
+        """
+        mx.eval(self._model.parameters())
+
+    def close(self) -> None:
+        """Drop references and free cached buffers so eviction reclaims memory."""
+        self._model = None
+        self._tokenizer = None
+        mx.clear_cache()
 
     def _render_prompt(self, messages: list[dict]) -> list[int]:
         return self._tokenizer.apply_chat_template(messages, add_generation_prompt=True)

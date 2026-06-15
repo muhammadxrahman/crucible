@@ -2,7 +2,7 @@
 
 Build milestones in order. Each is independently demoable. Do not start a milestone before the previous one passes its acceptance criteria. Update the current-milestone line in `CLAUDE.md` as work proceeds.
 
-Options and tradeoffs for each milestone are condensed here; the personal design notes carry the longer rationale.
+Options and tradeoffs for each milestone are condensed here; the personal design notes carry the longer rationale. Note that milestones are subject to change as new practical findings and limitations are discovered.
 
 ## M0: foundations and environment
 Goal: text generation from one model through the CLI, plus the repo skeleton.

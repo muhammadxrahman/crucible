@@ -14,6 +14,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from crucible.backends import Delta, Final, GenEvent, SamplingParams
+from crucible.config import Registry
+from crucible.manager import ModelManager, RuntimeProfile
 from crucible.server import create_app
 
 
@@ -42,9 +44,28 @@ class FakeEngine:
         )
 
 
+def make_client(pieces: list[str] | None = None) -> tuple[TestClient, FakeEngine]:
+    reg = Registry.model_validate(
+        {"models": [{"path": "fake/tiny", "type": "lm", "served_name": "primary", "pin": True}]}
+    )
+    runtime = RuntimeProfile(
+        name="pro64",
+        ceiling_bytes=10**12,
+        single_resident=False,
+        default_context=32768,
+        kv_bits=8,
+        vision=True,
+    )
+    engine = FakeEngine(pieces)
+    manager = ModelManager(reg, runtime, lambda entry: (engine, 1000))
+    manager.warmup()
+    return TestClient(create_app(manager, runtime)), engine
+
+
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(create_app(FakeEngine(), profile="pro64"))
+    c, _ = make_client()
+    return c
 
 
 def test_healthz_reports_profile_and_model(client: TestClient) -> None:
@@ -116,8 +137,7 @@ def test_completions_legacy(client: TestClient) -> None:
 
 
 def test_sampling_and_stop_are_forwarded() -> None:
-    engine = FakeEngine()
-    c = TestClient(create_app(engine, profile="pro64"))
+    c, engine = make_client()
     c.post(
         "/v1/chat/completions",
         json={
@@ -135,9 +155,78 @@ def test_sampling_and_stop_are_forwarded() -> None:
     assert engine.last_params.stop == ["\n\n", "END"]
 
 
+def make_multi_client() -> tuple[TestClient, dict[str, FakeEngine]]:
+    reg = Registry.model_validate(
+        {
+            "models": [
+                {"path": "f/a", "type": "lm", "served_name": "a"},
+                {"path": "f/b", "type": "lm", "served_name": "b"},
+                {"path": "f/e", "type": "embedding", "served_name": "embed"},
+            ]
+        }
+    )
+    runtime = RuntimeProfile(
+        name="pro64",
+        ceiling_bytes=10**12,
+        single_resident=False,
+        default_context=32768,
+        kv_bits=8,
+        vision=True,
+    )
+    from crucible.manager import ModelTypeUnsupported
+
+    engines: dict[str, FakeEngine] = {}
+
+    def loader(entry):  # noqa: ANN001
+        if entry.type != "lm":
+            raise ModelTypeUnsupported(f"serving '{entry.type}' arrives in M5")
+        e = FakeEngine([entry.served_name])  # echoes its own name
+        engines[entry.served_name] = e
+        return e, 1000
+
+    manager = ModelManager(reg, runtime, loader)
+    return TestClient(create_app(manager, runtime)), engines
+
+
+def test_routing_selects_model_by_field() -> None:
+    c, _ = make_multi_client()
+    ra = c.post("/v1/chat/completions", json={"model": "a", "messages": []}).json()
+    rb = c.post("/v1/chat/completions", json={"model": "b", "messages": []}).json()
+    assert ra["choices"][0]["message"]["content"] == "a"
+    assert rb["choices"][0]["message"]["content"] == "b"
+
+
+def test_admin_load_unload_pin_over_http() -> None:
+    c, _ = make_multi_client()
+    assert c.post("/admin/models/load", json={"served_name": "a"}).json()["state"] == "resident"
+
+    states = {m["id"]: m["state"] for m in c.get("/v1/models").json()["data"]}
+    assert states["a"] == "resident"
+
+    assert c.post("/admin/models/unload", json={"served_name": "a"}).json()["state"] == "available"
+
+    pinned = c.post("/admin/models/pin", json={"served_name": "b", "pinned": True}).json()
+    assert pinned["pinned"] is True and pinned["state"] == "resident"
+
+    miss = c.post("/admin/models/load", json={"served_name": "ghost"})
+    assert miss.status_code == 404 and miss.json()["error"]["type"] == "model_not_found"
+
+
+def test_unsupported_model_type_returns_400() -> None:
+    c, _ = make_multi_client()
+    r = c.post("/v1/chat/completions", json={"model": "embed", "messages": []})
+    assert r.status_code == 400
+    assert r.json()["error"]["type"] == "model_type_unsupported"
+
+
+def test_healthz_reports_ceiling_and_resident_gb() -> None:
+    c, _ = make_multi_client()
+    body = c.get("/healthz").json()
+    assert "memory_ceiling_gb" in body and "resident_gb" in body
+
+
 def test_vision_parts_flatten_to_text() -> None:
-    engine = FakeEngine()
-    c = TestClient(create_app(engine, profile="pro64"))
+    c, engine = make_client()
     c.post(
         "/v1/chat/completions",
         json={
