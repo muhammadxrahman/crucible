@@ -92,30 +92,19 @@ Acceptance: post an image and a question, get an accurate answer; run a document
 
 Tradeoff: VLM batching is more limited than text (prefix caching for VLMs is constrained), so set conservative VLM concurrency. The VLM engine runs on a single owned thread, which both keeps MLX arrays thread-affine and serializes VLM work to that conservative concurrency. Vision caching is at the image-materialization level (the same image across turns is decoded once, keyed by content hash, surfaced as `crucible_vision_cache_hits`); mlx-vlm 0.6.3 does not cleanly expose cross-turn vision-tower KV reuse, whose `cached_tokens` signal is surfaced for when a model or version does support it.
 
-## M7: LoRA fine-tuning and adapter serving
-Goal: fine-tune on local data and serve the adapter.
-
-Build:
-- A training pipeline on `mlx-lm` LoRA (LoRA, DoRA, QLoRA, full).
-- Dataset prep to JSONL, an eval split, an eval step.
-- Two serving modes: fuse (`mlx_lm.fuse`) or dynamic per-request adapter routing.
-
-Acceptance: fine-tune a small model on a focused dataset; serve the adapter; A/B it against the base on held-out examples with numbers.
-
-Tradeoff: LoRA for most cases; QLoRA when the base is large and memory is tight; DoRA for a quality bump; full only for small models. Build fuse first; add dynamic routing for the multi-tenant story.
-
-## M8: packaging and deploy
+## M7: packaging and deploy
 Goal: one command up, survives reboot, documented.
 
 Build:
 - A `launchd` plist so the engine runs native on login (not Docker).
-- A CLI (`mlxd serve`, `mlxd models`, `mlxd bench`, `mlxd profile`).
+- A complete CLI (`mlxd serve`, `mlxd models`, `mlxd bench`, `mlxd profile`, `mlxd validate`, `mlxd service`).
 - Config validation on boot with clear errors.
-- Docker Compose for CPU side-services only (Prometheus, Grafana, optional Qdrant), with a README note that the engine is host-native by design.
+- Optional Docker Compose for CPU side-services only (an external Prometheus/Grafana/Qdrant), with a README note that the engine is host-native by design and observability is in-app by default (no external services required).
+- Leave a clean extension slot for the deferred training component (M9): the registry already carries an `adapters` field, and the CLI reserves a `mlxd train` command.
 
 Acceptance: a fresh login brings the server up; the CLI works; the README takes a new reader from clone to first cited answer in under 15 minutes.
 
-## M9: web UI (control plane and demo surface)
+## M8: web UI (control plane and demo surface)
 Goal: a local web app exposing every capability behind one interface.
 
 Build:
@@ -126,6 +115,18 @@ Build:
 Acceptance: a full demo runs in the browser (pick a model, chat, drop an image, ingest a doc and get a cited answer, watch memory and throughput live); on a 16GB profile the UI shows the smaller model and hides the vision view.
 
 Note: a thin chat-only UI may land right after M1 for fast feedback; the full capability UI belongs here.
+
+## M9: LoRA fine-tuning and adapter serving (deferred to last)
+Goal: fine-tune on local data and serve the adapter. Deferred to the end: training is not required for the inference platform itself, so it lands after packaging and the UI. Packaging (M7) reserves the CLI and config slots it will use.
+
+Build:
+- A training pipeline on `mlx-lm` LoRA (LoRA, DoRA, QLoRA, full).
+- Dataset prep to JSONL, an eval split, an eval step.
+- Two serving modes: fuse (`mlx_lm.fuse`) or dynamic per-request adapter routing.
+
+Acceptance: fine-tune a small model on a focused dataset; serve the adapter; A/B it against the base on held-out examples with numbers.
+
+Tradeoff: LoRA for most cases; QLoRA when the base is large and memory is tight; DoRA for a quality bump; full only for small models. Build fuse first; add dynamic routing for the multi-tenant story.
 
 ## Definition of done
 

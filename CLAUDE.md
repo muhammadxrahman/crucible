@@ -30,7 +30,7 @@ Reuse: `mlx`, `mlx-lm`, `mlx-vlm`, `mlx-embeddings` as the model runtime. Study,
 
 Work milestones in order. Do not start a milestone before the previous one passes its acceptance criteria. The current milestone is tracked below. Full milestone definitions with acceptance criteria are in `docs/roadmap.md`.
 
-Current milestone: M6 (vision and multimodal)
+Current milestone: M7 (packaging and deploy). Note: milestones were reordered — training (LoRA fine-tuning) is deferred to last as M9; M7 is packaging, M8 is the web UI.
 
 ## Commands
 

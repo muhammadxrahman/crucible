@@ -1,0 +1,22 @@
+# OPTIONAL external monitoring. Crucible needs none of this — observability is in-app
+# (/metrics + /observability). These are CPU-only side-services; the inference engine is
+# always host-native (Docker on macOS has no Metal access). See ops/README.md.
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus

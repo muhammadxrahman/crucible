@@ -6,17 +6,17 @@ locally: no cloud, no API keys.
 
 The inference engine runs **native on the host**, not in Docker. Docker on macOS runs
 in a Linux VM with no Metal access, which forces CPU execution and defeats the platform.
-Docker is used only for stateless CPU side-services (Prometheus, Grafana). See
-`docs/hardware.md`.
+The default install adds no external daemons; Docker is only ever used for an optional
+monitoring stack (see `ops/`). See `docs/hardware.md`.
 
 ## Status
 
-Milestone **M6** (vision). Image-plus-text requests via the OpenAI vision shape
-(`image_url`, HTTP or base64): image-bearing requests route to a VLM (`mlx-vlm`),
-text-only to the text model, with an image cache reused across turns. Plus M5 (RAG:
-embeddings, vector store, two-stage retrieval, grounded citations), M4 (observability +
-benchmarking), M3 (continuous batching + prefix KV-cache), M2 (model manager), and M1
-(OpenAI-compatible gateway). See `docs/roadmap.md`.
+Milestone **M7** (packaging). Native autostart on login via launchd, a complete CLI
+(`serve`, `models`, `bench`, `profile`, `validate`, `service`), boot-time config
+validation, and an optional external monitoring stack in `ops/`. Plus M6 (vision), M5
+(RAG: embeddings, vector store, two-stage retrieval, grounded citations), M4
+(observability + benchmarking), M3 (continuous batching + prefix KV-cache), M2 (model
+manager), and M1 (OpenAI-compatible gateway). See `docs/roadmap.md`.
 
 ## Observability
 
@@ -25,33 +25,54 @@ once the server is running. `GET /metrics` exposes standard Prometheus text, so 
 Prometheus + Grafana can scrape it if long-term retention is wanted, but neither is required
 and nothing here uses Docker.
 
-## Setup
+## Quickstart (clone to first cited answer)
 
 ```
-uv sync                      # create the venv and install deps (Python 3.12)
-./scripts/install-hooks.sh   # install the pre-push regression gate
+uv sync                                # create the venv, install deps (Python 3.12)
+uv run mlxd validate                   # check the registry and active profile
+uv run mlxd serve                      # start the server (downloads models on first run)
+# in another shell, open the in-app dashboard:
+open http://127.0.0.1:8000/observability
+# ingest local docs and ask a grounded question:
+curl -s localhost:8000/rag/ingest  -H 'content-type: application/json' -d '{"paths":"./docs"}'
+curl -s localhost:8000/rag/query   -H 'content-type: application/json' -d '{"query":"What is the build boundary?"}'
+```
+
+For fast local iteration on a tiny model: `uv run mlxd serve -c config/dev.yaml`.
+
+## Run on login (native, no Docker)
+
+```
+uv run mlxd service install     # install + load a launchd LaunchAgent (RunAtLoad)
+uv run mlxd service status      # check it is loaded
+uv run mlxd service uninstall   # remove it
 ```
 
 ## Commands
 
 ```
-uv run mlxd profile          # show detected hardware and the active profile
-uv run mlxd serve -c config/dev.yaml   # start the gateway on a tiny model (fast)
-uv run mlxd serve            # start the gateway on the production registry
-uv run mlxd models           # list, load, unload, pin models (M2+)
-uv run mlxd bench benchmarks/specs/tiny.yaml   # run the benchmark harness (M4+)
-uv run pytest                # run tests
-./scripts/check.sh           # run the full pre-push gate (ruff + pytest)
+uv run mlxd profile                    # detected hardware and active profile
+uv run mlxd validate                   # validate the registry, no server start
+uv run mlxd serve [-c config.yaml]     # start the OpenAI/RAG/vision gateway
+uv run mlxd models list                # list models and residency (server must be up)
+uv run mlxd models load|unload|pin <name>
+uv run mlxd bench benchmarks/specs/tiny.yaml
+uv run mlxd service install|status|uninstall
+./scripts/check.sh                     # full pre-push gate (ruff + pytest)
 ```
+
+Development setup also installs the pre-push regression gate: `./scripts/install-hooks.sh`.
 
 ## Layout
 
 ```
-src/crucible/   the package (config, hardware, cli; gateway and orchestration land later)
-config/         models.yaml and hardware profiles
-docs/           architecture, hardware, models, api, ui, roadmap, conventions
+src/crucible/   gateway (server), orchestration (manager), backends (text/vision/embed/
+                rerank), batching, rag, observability, benchmark, cli, client, service
+config/         models.yaml (production) and dev.yaml; hardware profiles
+docs/           architecture, hardware, models, api, ui, roadmap
 tests/          pytest acceptance and regression suite
-benchmarks/     benchmark harness and reports
-web/            the Vite + React UI (M9)
-scripts/        check.sh (regression gate), install-hooks.sh, smoke_generate.py
+benchmarks/     benchmark harness specs and reports
+ops/            optional external Prometheus/Grafana (not required)
+web/            the Vite + React UI (M8)
+scripts/        check.sh (regression gate), install-hooks.sh, smoke_*.py
 ```

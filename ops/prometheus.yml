@@ -1,0 +1,8 @@
+# Scrapes the host-native Crucible server. The engine runs on the host, not in Docker.
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: crucible
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
