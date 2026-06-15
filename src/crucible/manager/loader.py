@@ -19,20 +19,56 @@ class ModelTypeUnsupported(Exception):
 _MILESTONE = {"vlm": "M6", "embedding": "M5", "rerank": "M5"}
 
 
-def make_loader(mem: MlxMemory | None = None):
-    """Return a loader that builds an engine and reports measured resident bytes."""
+def make_loader(
+    mem: MlxMemory | None = None,
+    *,
+    batching: bool = False,
+    completion_batch_size: int = 32,
+    max_kv_size: int | None = None,
+):
+    """Return a loader that builds an engine and reports measured resident bytes.
+
+    With batching on, an `lm` entry is served by a BatchedTextEngine sharing one
+    continuous-batching scheduler; otherwise by the single-stream MLXTextEngine.
+    """
     mem = mem or MlxMemory()
 
     def load(entry: ModelEntry) -> tuple[object, int]:
         if entry.type == "lm":
-            from crucible.backends.text import MLXTextEngine
+            import mlx.core as mx
+            from mlx_lm import load as mlx_load
 
             mem.clear_cache()
             before = mem.active_bytes()
-            engine = MLXTextEngine(entry.path, entry.served_name)
-            engine.materialize()
-            after = mem.active_bytes()
-            return engine, max(after - before, 0)
+            model, tokenizer = mlx_load(entry.path)
+            mx.eval(model.parameters())
+            nbytes = max(mem.active_bytes() - before, 0)
+
+            if batching:
+                from mlx_lm.sample_utils import make_sampler
+
+                from crucible.batching import BatchedTextEngine, BatchScheduler, MLXBatchBackend
+
+                backend = MLXBatchBackend(
+                    model,
+                    tokenizer,
+                    completion_batch_size=completion_batch_size,
+                    max_kv_size=max_kv_size,
+                )
+                scheduler = BatchScheduler(backend, tokenizer, make_sampler=make_sampler)
+                engine = BatchedTextEngine(scheduler, tokenizer, entry.served_name, entry.path)
+            else:
+                from crucible.backends.text import MLXTextEngine
+                from crucible.batching import PrefixCache
+
+                engine = MLXTextEngine(
+                    entry.path,
+                    entry.served_name,
+                    model=model,
+                    tokenizer=tokenizer,
+                    prefix_cache=PrefixCache(),
+                )
+            return engine, nbytes
 
         milestone = _MILESTONE.get(entry.type, "a later milestone")
         raise ModelTypeUnsupported(

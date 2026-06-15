@@ -88,10 +88,11 @@ def serve(
     bind_host = host or reg.server.host
     bind_port = port or reg.server.port
 
-    manager = ModelManager(reg, runtime, make_loader())
+    loader = make_loader(batching=reg.server.batching, max_kv_size=runtime.default_context)
+    manager = ModelManager(reg, runtime, loader)
     typer.secho(
         f"profile {active}: ceiling {runtime.ceiling_gb} GB, "
-        f"single_resident={runtime.single_resident}",
+        f"single_resident={runtime.single_resident}, batching={reg.server.batching}",
         fg=typer.colors.CYAN,
     )
     manager.warmup()  # eagerly load pinned models

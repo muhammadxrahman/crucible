@@ -10,18 +10,29 @@ from collections.abc import Iterator
 
 import mlx.core as mx
 from mlx_lm import load, stream_generate
+from mlx_lm.models.cache import can_trim_prompt_cache, make_prompt_cache, trim_prompt_cache
 from mlx_lm.sample_utils import make_sampler
 
 from .base import Delta, Final, GenEvent, SamplingParams
 
 
 class MLXTextEngine:
-    """Loads one text model and streams completions from it."""
+    """Loads one text model and streams completions from it (non-batched path).
 
-    def __init__(self, model_path: str, served_name: str):
+    Used directly when batching is off, and as the reproducible-sampling path even when
+    batching is on (batched mode shares one RNG lane). See docs/roadmap.md M3.
+    """
+
+    def __init__(
+        self, model_path: str, served_name: str, *, model=None, tokenizer=None, prefix_cache=None
+    ):
         self.model_path = model_path
         self.served_name = served_name
-        self._model, self._tokenizer = load(model_path)
+        self._prefix = prefix_cache  # optional PrefixCache for shared-prefix prefill reuse
+        if model is not None and tokenizer is not None:
+            self._model, self._tokenizer = model, tokenizer
+        else:
+            self._model, self._tokenizer = load(model_path)
 
     def materialize(self) -> None:
         """Force weight allocation so resident memory can be measured honestly.
@@ -42,6 +53,7 @@ class MLXTextEngine:
     def stream(self, messages: list[dict], params: SamplingParams) -> Iterator[GenEvent]:
         prompt = self._render_prompt(messages)
         sampler = make_sampler(temp=params.temperature, top_p=params.top_p)
+        cache, feed = self._seed_cache(prompt)
 
         text = ""
         completion_tokens = 0
@@ -49,12 +61,14 @@ class MLXTextEngine:
         decode_tps = 0.0
         finish_reason = "length"
 
+        kwargs = {"prompt_cache": cache} if cache is not None else {}
         for resp in stream_generate(
             self._model,
             self._tokenizer,
-            prompt,
+            feed,
             max_tokens=params.max_tokens,
             sampler=sampler,
+            **kwargs,
         ):
             prefill_tps = resp.prompt_tps or prefill_tps
             decode_tps = resp.generation_tps or decode_tps
@@ -71,13 +85,40 @@ class MLXTextEngine:
                 finish_reason = resp.finish_reason
                 break
 
+        if cache is not None:
+            self._store_prefix(prompt, cache, completion_tokens)
+
         yield Final(
-            prompt_tokens=len(prompt),
+            prompt_tokens=len(prompt),  # always the full prompt, even when a prefix was reused
             completion_tokens=completion_tokens,
             finish_reason=finish_reason,
             prefill_tps=prefill_tps,
             decode_tps=decode_tps,
         )
+
+    # --- prefix caching (only when a PrefixCache was supplied) ---
+
+    def _seed_cache(self, prompt: list[int]) -> tuple[object | None, list[int]]:
+        """Return (cache, tokens_to_prefill). Reuses a cached prefix when one matches."""
+        if self._prefix is None:
+            return None, prompt
+        seed, matched = self._prefix.lookup(prompt)
+        cache = make_prompt_cache(self._model)
+        if seed is not None:
+            for layer, state in zip(cache, seed, strict=False):
+                layer.state = state
+            return cache, prompt[matched:]
+        return cache, prompt
+
+    def _store_prefix(self, prompt: list[int], cache, completion_tokens: int) -> None:
+        """Snapshot the full-prompt KV (trim the generated tail) for future reuse."""
+        try:
+            if completion_tokens > 0 and can_trim_prompt_cache(cache):
+                trim_prompt_cache(cache, completion_tokens)
+            state = [tuple(mx.array(a) for a in layer.state) for layer in cache]
+            self._prefix.store(prompt, state)
+        except Exception:
+            pass  # caching is best-effort; never fail a request over it
 
 
 def _apply_stop(new_text: str, so_far: str, stops: list[str]) -> tuple[str, bool]:
