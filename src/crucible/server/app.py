@@ -28,7 +28,14 @@ from crucible.manager import (
 from crucible.observability import CONTENT_TYPE, Metrics
 
 from . import payloads
-from .schemas import ChatCompletionRequest, CompletionRequest
+from .schemas import (
+    ChatCompletionRequest,
+    CompletionRequest,
+    EmbeddingsRequest,
+    RagIngestRequest,
+    RagQueryRequest,
+    RerankRequest,
+)
 
 DEFAULT_MAX_TOKENS = 512
 _MB = 1024 * 1024
@@ -57,12 +64,13 @@ class AdminModelRequest(BaseModel):
     pinned: bool = True
 
 
-def create_app(manager: ModelManager, runtime: RuntimeProfile) -> FastAPI:
+def create_app(manager: ModelManager, runtime: RuntimeProfile, rag=None) -> FastAPI:
     app = FastAPI(title="Crucible", version="0.0.0")
     metrics = Metrics()
     app.state.manager = manager
     app.state.runtime = runtime
     app.state.metrics = metrics
+    app.state.rag = rag
 
     @app.get("/healthz")
     def healthz() -> dict:
@@ -137,7 +145,83 @@ def create_app(manager: ModelManager, runtime: RuntimeProfile) -> FastAPI:
     def admin_pin(req: AdminModelRequest):
         return _admin(lambda: manager.pin(req.served_name, req.pinned))
 
+    @app.post("/v1/embeddings")
+    def embeddings(req: EmbeddingsRequest):
+        engine, miss = _resolve(manager, req.model)
+        if miss:
+            return miss
+        if not hasattr(engine, "embed"):
+            return _type_error(req.model, "embedding")
+        vectors = engine.embed(req.texts())
+        return JSONResponse(
+            {
+                "object": "list",
+                "model": req.model,
+                "data": [
+                    {"object": "embedding", "index": i, "embedding": v}
+                    for i, v in enumerate(vectors)
+                ],
+            }
+        )
+
+    @app.post("/v1/rerank")
+    def rerank(req: RerankRequest):
+        engine, miss = _resolve(manager, req.model)
+        if miss:
+            return miss
+        if not hasattr(engine, "rerank"):
+            return _type_error(req.model, "rerank")
+        scores = engine.rerank(req.query, req.documents)
+        order = sorted(range(len(req.documents)), key=lambda i: scores[i], reverse=True)
+        if req.top_n:
+            order = order[: req.top_n]
+        return JSONResponse(
+            {
+                "model": req.model,
+                "results": [
+                    {"index": i, "relevance_score": scores[i], "document": req.documents[i]}
+                    for i in order
+                ],
+            }
+        )
+
+    @app.post("/rag/ingest")
+    def rag_ingest(req: RagIngestRequest):
+        if rag is None:
+            return _rag_disabled()
+        return JSONResponse(rag.ingest(req.paths))
+
+    @app.post("/rag/query")
+    def rag_query(req: RagQueryRequest):
+        if rag is None:
+            return _rag_disabled()
+        return JSONResponse(
+            rag.query(req.query, rerank=req.rerank, top_k=req.top_k, top_n=req.top_n)
+        )
+
+    @app.get("/rag/documents")
+    def rag_documents():
+        if rag is None:
+            return _rag_disabled()
+        return JSONResponse({"documents": rag.documents()})
+
     return app
+
+
+def _type_error(model: str, expected: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content=payloads.error(f"model '{model}' is not a {expected} model", "model_type_error"),
+    )
+
+
+def _rag_disabled() -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content=payloads.error(
+            "RAG is not configured (no embedding model in the registry)", "rag_unavailable"
+        ),
+    )
 
 
 def _model_view(s: ModelStatus) -> dict:

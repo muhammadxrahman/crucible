@@ -96,7 +96,25 @@ def serve(
         fg=typer.colors.CYAN,
     )
     manager.warmup()  # eagerly load pinned models
-    application = create_app(manager, runtime)
+
+    from crucible.rag import RagPipeline, resolve_rag_roles
+
+    roles = resolve_rag_roles(reg)
+    rag = None
+    if roles["embed_name"] and roles["generator_name"]:
+        rag = RagPipeline(
+            manager,
+            reg.rag,
+            embed_name=roles["embed_name"],
+            generator_name=roles["generator_name"],
+            rerank_name=roles["rerank_name"],
+        )
+        typer.secho(
+            f"RAG enabled: embed={roles['embed_name']} generator={roles['generator_name']} "
+            f"rerank={roles['rerank_name'] or 'off'}",
+            fg=typer.colors.CYAN,
+        )
+    application = create_app(manager, runtime, rag)
     typer.secho(
         f"serving {len(reg.models)} model(s) on http://{bind_host}:{bind_port} "
         f"[resident: {manager.resident_models() or 'none (lazy)'}]",

@@ -44,11 +44,25 @@ class ProfileSpec(_Strict):
     roles: dict[str, str] = Field(default_factory=dict)
 
 
+class RagConfig(_Strict):
+    embed_model: str | None = None  # served_name; defaults to the first embedding model
+    rerank_model: str | None = None  # served_name; defaults to the first rerank model
+    generator_model: str | None = None  # served_name; defaults to the first lm model
+    rerank: bool = True  # toggleable so the rerank lift can be measured
+    top_k: int = Field(default=20, gt=0)  # dense candidates retrieved
+    top_n: int = Field(default=5, gt=0)  # passed into the grounded prompt after rerank
+    chunk_size: int = Field(default=220, gt=0)  # words per chunk
+    chunk_overlap: int = Field(default=40, ge=0)  # words of overlap
+    store_dir: str = ".crucible/rag"
+    max_context_chars: int = Field(default=6000, gt=0)
+
+
 class Registry(_Strict):
     profile: str = "auto"
     server: ServerConfig = Field(default_factory=ServerConfig)
     models: list[ModelEntry] = Field(default_factory=list)
     profiles: dict[str, ProfileSpec] = Field(default_factory=dict)
+    rag: RagConfig = Field(default_factory=RagConfig)
 
     @model_validator(mode="after")
     def _unique_served_names(self) -> Registry:

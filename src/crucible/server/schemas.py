@@ -63,6 +63,32 @@ class CompletionRequest(BaseModel):
 # --- helpers ---
 
 
+class EmbeddingsRequest(BaseModel):
+    model: str
+    input: str | list[str]
+
+    def texts(self) -> list[str]:
+        return [self.input] if isinstance(self.input, str) else list(self.input)
+
+
+class RerankRequest(BaseModel):
+    model: str
+    query: str
+    documents: list[str]
+    top_n: int | None = Field(default=None, gt=0)
+
+
+class RagIngestRequest(BaseModel):
+    paths: str | list[str]
+
+
+class RagQueryRequest(BaseModel):
+    query: str
+    rerank: bool | None = None
+    top_k: int | None = Field(default=None, gt=0)
+    top_n: int | None = Field(default=None, gt=0)
+
+
 def _as_list(stop: str | list[str] | None) -> list[str]:
     if stop is None:
         return []

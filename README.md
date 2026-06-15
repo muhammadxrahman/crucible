@@ -11,12 +11,12 @@ Docker is used only for stateless CPU side-services (Prometheus, Grafana). See
 
 ## Status
 
-Milestone **M4** (observability and benchmarking). Native Prometheus `/metrics`, an in-app
-dashboard at `/observability` (no Docker, no external daemons), and a benchmark harness
-(`mlxd bench`) that reports prefill and decode throughput separately and throughput vs
-concurrency. Builds on M3 (continuous batching + prefix KV-cache over `mlx-lm`'s
-`BatchGenerator`), M2 (model manager: routing, LRU eviction, pin/TTL), and M1
-(OpenAI-compatible gateway). See `docs/roadmap.md`.
+Milestone **M5** (RAG). Ingest local documents (text, markdown, PDF), then answer with
+grounded citations: dense retrieval over an in-process vector store, an optional
+cross-encoder rerank, and grounded generation. `/v1/embeddings`, `/v1/rerank`, and
+`/rag/{ingest,query,documents}`, all local with no network access. Builds on M4
+(observability + benchmarking), M3 (continuous batching + prefix KV-cache), M2 (model
+manager), and M1 (OpenAI-compatible gateway). See `docs/roadmap.md`.
 
 ## Observability
 

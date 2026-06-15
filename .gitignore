@@ -26,5 +26,8 @@ models/
 # Benchmark output
 benchmarks/reports/
 
+# RAG vector store
+.crucible/
+
 # OS
 .DS_Store

@@ -77,7 +77,7 @@ Build:
 
 Acceptance: ingest a folder of PDFs and notes; ask a question; get an answer grounded in the right chunks with sources; confirm no external network calls.
 
-Tradeoff: start with LanceDB (embedded, zero-ops); move to Qdrant only if server-side filtering or multi-client access is needed. Keep rerank toggleable to quantify its lift.
+Tradeoff: the store is an in-process NumPy brute-force index (zero dependencies, zero daemons), which fits the self-contained-app goal and is fast for local document counts. It sits behind a small interface, so LanceDB (embedded ANN) or Qdrant (server-side filtering, multi-client) can drop in later if scale needs it. Keep rerank toggleable to quantify its lift.
 
 ## M6: vision and multimodal
 Goal: accept image-plus-text requests and answer about the image.
