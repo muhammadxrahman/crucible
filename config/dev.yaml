@@ -1,0 +1,18 @@
+# Development registry: a tiny model for fast local iteration and acceptance checks.
+# Use with: uv run mlxd serve --config config/dev.yaml
+# The production registry is config/models.yaml.
+
+profile: auto
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  batching: false
+
+models:
+  - path: mlx-community/Qwen2.5-0.5B-Instruct-4bit
+    type: lm
+    served_name: primary
+    quant: 4
+    context_length: 8192
+    pin: true

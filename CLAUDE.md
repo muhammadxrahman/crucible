@@ -30,7 +30,7 @@ Reuse: `mlx`, `mlx-lm`, `mlx-vlm`, `mlx-embeddings` as the model runtime. Study,
 
 Work milestones in order. Do not start a milestone before the previous one passes its acceptance criteria. The current milestone is tracked below. Full milestone definitions with acceptance criteria are in `docs/roadmap.md`.
 
-Current milestone: M0 (foundations and environment)
+Current milestone: M1 (text inference server, the spine)
 
 ## Commands
 

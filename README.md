@@ -11,7 +11,9 @@ Docker is used only for stateless CPU side-services (Prometheus, Grafana). See
 
 ## Status
 
-Milestone **M0** (foundations and environment). See `docs/roadmap.md`.
+Milestone **M1** (text inference server). OpenAI-compatible `/v1/chat/completions`
+(streaming + non-streaming), `/v1/completions`, `/v1/models`, `/healthz` over one MLX
+text model. See `docs/roadmap.md`.
 
 ## Setup
 
@@ -24,7 +26,8 @@ uv sync                      # create the venv and install deps (Python 3.12)
 
 ```
 uv run mlxd profile          # show detected hardware and the active profile
-uv run mlxd serve            # start the server (M1+)
+uv run mlxd serve -c config/dev.yaml   # start the gateway on a tiny model (fast)
+uv run mlxd serve            # start the gateway on the production registry
 uv run mlxd models           # list, load, unload, pin models (M2+)
 uv run mlxd bench <spec>     # run the benchmark harness (M4+)
 uv run pytest                # run tests
