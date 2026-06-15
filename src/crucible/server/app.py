@@ -8,12 +8,16 @@ runs blocking MLX work in a threadpool. Batching and the Anthropic surface come 
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterator
+from functools import lru_cache
+from importlib.resources import files
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
+from crucible.backends import Delta, Final
 from crucible.manager import (
     ModelManager,
     ModelStatus,
@@ -21,12 +25,31 @@ from crucible.manager import (
     RuntimeProfile,
     UnknownModel,
 )
+from crucible.observability import CONTENT_TYPE, Metrics
 
 from . import payloads
 from .schemas import ChatCompletionRequest, CompletionRequest
 
 DEFAULT_MAX_TOKENS = 512
 _MB = 1024 * 1024
+
+
+@lru_cache(maxsize=1)
+def _dashboard_html() -> str:
+    return (files("crucible.observability") / "dashboard.html").read_text()
+
+
+def _observe(events: Iterator, metrics: Metrics, model: str) -> Iterator:
+    """Tap an engine stream to record TTFT and the final per-request metrics."""
+    start = time.perf_counter()
+    first_seen = False
+    for ev in events:
+        if not first_seen and isinstance(ev, Delta):
+            first_seen = True
+            metrics.observe_ttft(model, time.perf_counter() - start)
+        if isinstance(ev, Final):
+            metrics.observe_final(model, ev, time.perf_counter() - start)
+        yield ev
 
 
 class AdminModelRequest(BaseModel):
@@ -36,8 +59,10 @@ class AdminModelRequest(BaseModel):
 
 def create_app(manager: ModelManager, runtime: RuntimeProfile) -> FastAPI:
     app = FastAPI(title="Crucible", version="0.0.0")
+    metrics = Metrics()
     app.state.manager = manager
     app.state.runtime = runtime
+    app.state.metrics = metrics
 
     @app.get("/healthz")
     def healthz() -> dict:
@@ -48,6 +73,23 @@ def create_app(manager: ModelManager, runtime: RuntimeProfile) -> FastAPI:
             "memory_ceiling_gb": runtime.ceiling_gb,
             "resident_gb": round(manager.resident_bytes() / (1024**3), 2),
         }
+
+    @app.get("/metrics")
+    def metrics_endpoint() -> Response:
+        metrics.collect(manager)
+        return Response(content=metrics.expose(), media_type=CONTENT_TYPE)
+
+    @app.get("/metrics/summary")
+    def metrics_summary() -> dict:
+        metrics.collect(manager)
+        s = metrics.summary()
+        s["profile"] = runtime.name
+        s["ceiling_gb"] = runtime.ceiling_gb
+        return s
+
+    @app.get("/observability", response_class=HTMLResponse)
+    def observability() -> str:
+        return _dashboard_html()
 
     @app.get("/v1/models")
     def list_models() -> dict:
@@ -60,12 +102,13 @@ def create_app(manager: ModelManager, runtime: RuntimeProfile) -> FastAPI:
             return miss
         params = req.sampling(DEFAULT_MAX_TOKENS)
         messages = req.rendered_messages()
+        events = _observe(engine.stream(messages, params), metrics, req.model)
         if req.stream:
             return StreamingResponse(
-                _sse(payloads.chat_stream(engine.stream(messages, params), req.model)),
+                _sse(payloads.chat_stream(events, req.model)),
                 media_type="text/event-stream",
             )
-        return JSONResponse(payloads.chat_full(engine.stream(messages, params), req.model))
+        return JSONResponse(payloads.chat_full(events, req.model))
 
     @app.post("/v1/completions")
     def completions(req: CompletionRequest):
@@ -74,12 +117,13 @@ def create_app(manager: ModelManager, runtime: RuntimeProfile) -> FastAPI:
             return miss
         params = req.sampling(DEFAULT_MAX_TOKENS)
         messages = [{"role": "user", "content": req.first_prompt()}]
+        events = _observe(engine.stream(messages, params), metrics, req.model)
         if req.stream:
             return StreamingResponse(
-                _sse(payloads.completion_stream(engine.stream(messages, params), req.model)),
+                _sse(payloads.completion_stream(events, req.model)),
                 media_type="text/event-stream",
             )
-        return JSONResponse(payloads.completion_full(engine.stream(messages, params), req.model))
+        return JSONResponse(payloads.completion_full(events, req.model))
 
     @app.post("/admin/models/load")
     def admin_load(req: AdminModelRequest):

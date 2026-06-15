@@ -38,7 +38,9 @@ Large models may need the GPU wired-memory ceiling raised: `sudo sysctl iogpu.wi
 
 Docker Desktop on macOS runs containers inside a Linux VM. That VM has no access to the Metal GPU or the Neural Accelerators. Running the inference engine in a container drops it to CPU and removes the reason to use this hardware.
 
-Therefore: the inference engine runs native on the host, managed by `launchd`. Docker is acceptable only for stateless CPU side-services (Prometheus, Grafana, an optional vector database). State this explicitly in the README, because a reviewer familiar with Linux and NVIDIA backends will assume the opposite.
+Therefore: the inference engine runs native on the host, managed by `launchd`. Docker is acceptable only for stateless CPU side-services (an optional external Prometheus or Grafana, an optional vector database). State this explicitly in the README, because a reviewer familiar with Linux and NVIDIA backends will assume the opposite.
+
+Because the end goal is a self-contained installable app, the default install adds no external daemons at all. Observability is in-app: the gateway exposes a native Prometheus-format `/metrics` endpoint and serves an `/observability` dashboard backed by an in-memory ring buffer. External Prometheus and Grafana (Homebrew or Docker) remain available for long-term retention, but they are an optional add-on, not part of the default path.
 
 ## Scaling across Macs
 

@@ -57,6 +57,7 @@ class ModelManager:
         self._loader = loader
         self._clock = clock
         self._resident: dict[str, _Resident] = {}
+        self._evictions = 0
         self._lock = threading.RLock()
 
     # --- public queries ---
@@ -84,6 +85,19 @@ class ModelManager:
     def resident_bytes(self) -> int:
         with self._lock:
             return self._resident_bytes()
+
+    def evictions(self) -> int:
+        with self._lock:
+            return self._evictions
+
+    def resident_stats(self) -> dict[str, dict]:
+        """Per-resident-model engine stats (queue depth, batch size, prefix hits, ...)."""
+        with self._lock:
+            out: dict[str, dict] = {}
+            for name, r in self._resident.items():
+                fn = getattr(r.engine, "stats", None)
+                out[name] = fn() if callable(fn) else {}
+            return out
 
     def is_resident(self, name: str) -> bool:
         with self._lock:
@@ -198,6 +212,7 @@ class ModelManager:
 
     def _evict(self, name: str) -> None:
         r = self._resident.pop(name)
+        self._evictions += 1
         close = getattr(r.engine, "close", None)
         if callable(close):
             close()

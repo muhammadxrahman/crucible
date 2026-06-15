@@ -112,9 +112,18 @@ def models() -> None:
 
 
 @app.command()
-def bench() -> None:
-    """Run the benchmark harness (M4+)."""
-    _not_yet("bench", "M4")
+def bench(
+    spec: Path = typer.Argument(..., help="Path to a benchmark spec YAML."),
+) -> None:
+    """Run the benchmark harness over a spec and write a Markdown report."""
+    from crucible.benchmark import run_spec
+
+    if not spec.is_file():
+        typer.secho(f"spec not found: {spec}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    typer.secho(f"running benchmark from {spec} ...", fg=typer.colors.CYAN)
+    report = run_spec(spec)
+    typer.secho(f"report written: {report}", fg=typer.colors.GREEN)
 
 
 if __name__ == "__main__":

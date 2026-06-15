@@ -90,6 +90,7 @@ def test_lru_eviction_when_load_exceeds_ceiling() -> None:
     assert set(m.resident_models()) == {"b", "c"}
     assert engines["a"].closed is True
     assert m.resident_bytes() == 200
+    assert m.evictions() == 1
 
 
 def test_recently_used_survives_eviction() -> None:

@@ -33,41 +33,55 @@ def make_loader(
     """
     mem = mem or MlxMemory()
 
+    def _measure_load(path: str):
+        """Load a model and report its resident-byte footprint. Run on the thread that
+        will evaluate it (MLX arrays are thread-affine)."""
+        import mlx.core as mx
+        from mlx_lm import load as mlx_load
+
+        mem.clear_cache()
+        before = mem.active_bytes()
+        model, tokenizer = mlx_load(path)
+        mx.eval(model.parameters())
+        return model, tokenizer, max(mem.active_bytes() - before, 0)
+
     def load(entry: ModelEntry) -> tuple[object, int]:
         if entry.type == "lm":
-            import mlx.core as mx
-            from mlx_lm import load as mlx_load
-
-            mem.clear_cache()
-            before = mem.active_bytes()
-            model, tokenizer = mlx_load(entry.path)
-            mx.eval(model.parameters())
-            nbytes = max(mem.active_bytes() - before, 0)
-
             if batching:
                 from mlx_lm.sample_utils import make_sampler
 
                 from crucible.batching import BatchedTextEngine, BatchScheduler, MLXBatchBackend
 
-                backend = MLXBatchBackend(
-                    model,
-                    tokenizer,
-                    completion_batch_size=completion_batch_size,
-                    max_kv_size=max_kv_size,
-                )
-                scheduler = BatchScheduler(backend, tokenizer, make_sampler=make_sampler)
-                engine = BatchedTextEngine(scheduler, tokenizer, entry.served_name, entry.path)
-            else:
-                from crucible.backends.text import MLXTextEngine
-                from crucible.batching import PrefixCache
+                # build() runs on the scheduler's worker thread, so the model and the
+                # BatchGenerator share that thread's MLX stream.
+                def build():
+                    model, tokenizer, nbytes = _measure_load(entry.path)
+                    backend = MLXBatchBackend(
+                        model,
+                        tokenizer,
+                        completion_batch_size=completion_batch_size,
+                        max_kv_size=max_kv_size,
+                    )
+                    return backend, tokenizer, nbytes
 
-                engine = MLXTextEngine(
-                    entry.path,
-                    entry.served_name,
-                    model=model,
-                    tokenizer=tokenizer,
-                    prefix_cache=PrefixCache(),
+                scheduler = BatchScheduler(build, make_sampler=make_sampler)
+                nbytes = scheduler.wait_ready()
+                engine = BatchedTextEngine(
+                    scheduler, scheduler.tokenizer, entry.served_name, entry.path
                 )
+                return engine, nbytes
+
+            from crucible.backends.text import MLXTextEngine
+            from crucible.batching import PrefixCache
+
+            model, tokenizer, nbytes = _measure_load(entry.path)
+            engine = MLXTextEngine(
+                entry.path,
+                entry.served_name,
+                model=model,
+                tokenizer=tokenizer,
+                prefix_cache=PrefixCache(),
+            )
             return engine, nbytes
 
         milestone = _MILESTONE.get(entry.type, "a later milestone")

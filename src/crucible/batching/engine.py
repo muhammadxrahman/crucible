@@ -38,3 +38,8 @@ class BatchedTextEngine:
 
     def snapshot(self) -> dict:
         return self._scheduler.snapshot()
+
+    def stats(self) -> dict:
+        s = self._scheduler.snapshot()
+        s["kv_cache_bytes"] = self._scheduler.kv_nbytes()
+        return s

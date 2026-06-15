@@ -61,10 +61,10 @@ Goal: a live metrics dashboard and a repeatable benchmark harness.
 
 Build:
 - Prometheus `/metrics`: prefill and decode throughput (separate), TTFT, queue depth, batch size, cache hit rate, resident memory, evictions, per-model counts and latencies.
-- A Grafana dashboard (Grafana and Prometheus in Docker; CPU services).
+- An in-app dashboard served at `/observability` (reads `/metrics/summary`, keeps a short in-memory history for sparklines). No external daemons, since the end goal is a self-contained installable app. External Prometheus and Grafana are an optional add-on the standard `/metrics` endpoint enables, not part of the default install.
 - A benchmark harness sweeping model, quantization, context length, and batch size, emitting a Markdown report with charts.
 
-Acceptance: the dashboard shows live traffic; the harness produces a reproducible report comparing a MoE against a dense model, with the bandwidth-ceiling effect visible.
+Acceptance: the in-app dashboard shows live traffic with no external services; the harness produces a reproducible report comparing a MoE against a dense model, with the bandwidth-ceiling effect visible.
 
 ## M5: RAG layer
 Goal: ingest local documents and answer with grounded citations. No external calls.

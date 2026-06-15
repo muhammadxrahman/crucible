@@ -225,6 +225,35 @@ def test_healthz_reports_ceiling_and_resident_gb() -> None:
     assert "memory_ceiling_gb" in body and "resident_gb" in body
 
 
+def test_metrics_endpoint_exposes_series_after_traffic() -> None:
+    c, _ = make_multi_client()
+    c.post("/v1/chat/completions", json={"model": "a", "messages": []})
+    r = c.get("/metrics")
+    assert r.status_code == 200
+    assert "text/plain" in r.headers["content-type"]
+    body = r.text
+    assert "crucible_requests_total" in body
+    assert "crucible_decode_tps" in body
+    assert "crucible_resident_bytes" in body
+
+
+def test_metrics_summary_shape() -> None:
+    c, _ = make_multi_client()
+    c.post("/v1/chat/completions", json={"model": "a", "messages": []})
+    s = c.get("/metrics/summary").json()
+    assert {"current", "history", "per_model"} <= set(s)
+    assert s["profile"] == "pro64"
+    assert "ceiling_gb" in s
+    assert s["current"]["requests_total"] >= 1
+
+
+def test_observability_serves_dashboard_html() -> None:
+    c, _ = make_multi_client()
+    r = c.get("/observability")
+    assert r.status_code == 200
+    assert "<title>Crucible" in r.text
+
+
 def test_vision_parts_flatten_to_text() -> None:
     c, engine = make_client()
     c.post(

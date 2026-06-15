@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Crucible — Observability</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b0e14; color: #d7dce5;
+         font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  header { padding: 16px 20px; border-bottom: 1px solid #1c2230; display: flex;
+           align-items: baseline; gap: 12px; }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .04em; }
+  .muted { color: #6b7689; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+          gap: 12px; padding: 20px; }
+  .card { background: #121723; border: 1px solid #1c2230; border-radius: 10px; padding: 14px 16px; }
+  .label { color: #8893a7; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .value { font-size: 26px; margin-top: 6px; }
+  .unit { font-size: 12px; color: #6b7689; margin-left: 4px; }
+  svg { display: block; margin-top: 8px; width: 100%; height: 36px; }
+  .bar { height: 6px; background: #1c2230; border-radius: 3px; margin-top: 10px; overflow: hidden; }
+  .bar > div { height: 100%; background: #4f8cff; }
+  table { width: calc(100% - 40px); margin: 0 20px 24px; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #1c2230; }
+  th { color: #8893a7; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CRUCIBLE</h1>
+  <span class="muted" id="meta">observability · live</span>
+</header>
+<div class="grid" id="cards"></div>
+<h3 style="margin:0 20px 8px;color:#8893a7;font-size:12px;text-transform:uppercase;">Per-model throughput</h3>
+<table id="permodel"><thead><tr><th>Model</th><th>Prefill tok/s</th><th>Decode tok/s</th></tr></thead><tbody></tbody></table>
+
+<script>
+const GB = 1024 ** 3;
+function spark(values, max) {
+  const w = 180, h = 36, n = values.length;
+  if (n < 2) return "";
+  const hi = max || Math.max(1, ...values);
+  const pts = values.map((v, i) => `${(i / (n - 1)) * w},${h - (v / hi) * h}`).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline fill="none" stroke="#4f8cff" stroke-width="1.5" points="${pts}"/></svg>`;
+}
+function card(label, value, unit, sparkSvg, bar) {
+  return `<div class="card"><div class="label">${label}</div>
+    <div class="value">${value}<span class="unit">${unit || ""}</span></div>
+    ${sparkSvg || ""}${bar || ""}</div>`;
+}
+async function tick() {
+  let d;
+  try { d = await (await fetch("/metrics/summary")).json(); }
+  catch (e) { document.getElementById("meta").textContent = "observability · disconnected"; return; }
+  const c = d.current, hist = d.history || [];
+  const residentGb = (c.resident_bytes / GB).toFixed(2);
+  const ceilingGb = (d.ceiling_gb || 0).toFixed(1);
+  const pct = d.ceiling_gb ? Math.min(100, (c.resident_bytes / GB / d.ceiling_gb) * 100) : 0;
+  document.getElementById("meta").textContent =
+    `observability · profile ${d.profile || "?"} · ${c.requests_total} requests`;
+  const cards = [
+    card("Decode", c.decode_tps.toFixed(0), "tok/s", spark(hist.map(h => h.decode_tps))),
+    card("Prefill", c.prefill_tps.toFixed(0), "tok/s", spark(hist.map(h => h.prefill_tps))),
+    card("TTFT", c.ttft_ms.toFixed(0), "ms", spark(hist.map(h => h.ttft_ms))),
+    card("Batch size", c.batch_size, "", spark(hist.map(h => h.batch_size))),
+    card("Queue depth", c.queue_depth, "", spark(hist.map(h => h.queue_depth))),
+    card("Prefix hit", (c.prefix_hit_ratio * 100).toFixed(0), "%"),
+    card("Evictions", c.evictions, ""),
+    card("Resident", residentGb, `/ ${ceilingGb} GB`, "",
+         `<div class="bar"><div style="width:${pct}%"></div></div>`),
+  ];
+  document.getElementById("cards").innerHTML = cards.join("");
+  const rows = Object.entries(d.per_model || {})
+    .map(([m, v]) => `<tr><td>${m}</td><td>${v.prefill_tps}</td><td>${v.decode_tps}</td></tr>`).join("");
+  document.querySelector("#permodel tbody").innerHTML = rows || `<tr><td colspan="3" class="muted">no traffic yet</td></tr>`;
+}
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

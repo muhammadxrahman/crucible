@@ -85,7 +85,8 @@ class FakeBackend:
 
 
 def make_scheduler(scripts: list[list[int]]) -> BatchScheduler:
-    return BatchScheduler(FakeBackend(scripts), FakeTokenizer(), make_sampler=lambda **kw: None)
+    backend = FakeBackend(scripts)
+    return BatchScheduler(lambda: (backend, FakeTokenizer(), 0), make_sampler=lambda **kw: None)
 
 
 def drain(channel) -> tuple[str, Final]:  # noqa: ANN001
@@ -129,6 +130,24 @@ def test_stop_sequence_truncates() -> None:
     text, final = drain(ch)
     assert text == "AA"
     assert final.finish_reason == "stop"
+    sched.stop()
+
+
+class CrashingBackend(FakeBackend):
+    def next_generated(self):
+        raise RuntimeError("boom")
+
+
+def test_worker_crash_fails_request_instead_of_hanging() -> None:
+    backend = CrashingBackend([[1, 2]])
+    sched = BatchScheduler(lambda: (backend, FakeTokenizer(), 0), make_sampler=lambda **kw: None)
+    ch = sched.submit([10], SamplingParams(max_tokens=8))
+    # Must not hang: a crashed worker delivers a terminal error Final.
+    _, final = drain(ch)
+    assert final.finish_reason == "error"
+    # A request submitted after the crash also fails fast.
+    _, final2 = drain(sched.submit([11], SamplingParams(max_tokens=8)))
+    assert final2.finish_reason == "error"
     sched.stop()
 
 

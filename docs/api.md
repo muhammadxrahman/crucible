@@ -27,7 +27,13 @@ Maps the Anthropic messages format onto the same backends. Honors `model`, `mess
 ## Ops endpoints
 
 ### GET /metrics
-Prometheus exposition format. Series include: prefill throughput, decode throughput, time-to-first-token, queue depth, active batch size, KV-cache hit rate, resident memory, eviction count, and per-model request counts and latencies. Prefill and decode are always separate series.
+Prometheus exposition format. Series include: prefill throughput, decode throughput, time-to-first-token, queue depth, active batch size, KV-cache hit rate, resident memory, eviction count, and per-model request counts and latencies. Prefill and decode are always separate series. This standard endpoint lets an external Prometheus scrape the server, but it is optional: the server needs no external monitoring stack.
+
+### GET /metrics/summary
+JSON snapshot of current metric values plus a short rolling history, for the in-app observability dashboard. Includes the active profile and memory ceiling.
+
+### GET /observability
+Serves the built-in dashboard (a self-contained page that polls `/metrics/summary`). The default observability surface, requiring no Prometheus or Grafana.
 
 ### GET /healthz
 Liveness and readiness. Reports server status, the active hardware profile, and resident models.

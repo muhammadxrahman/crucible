@@ -22,13 +22,17 @@ MODEL = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
 MAX_TOKENS = 96
 
 
-def main() -> None:
-    print(f"loading {MODEL} ...")
+def _build():
     model, tok = load(MODEL)
     mx.eval(model.parameters())
-    backend = MLXBatchBackend(model, tok, completion_batch_size=32)
-    sched = BatchScheduler(backend, tok, make_sampler=make_sampler)
-    engine = BatchedTextEngine(sched, tok, "primary", MODEL)
+    return MLXBatchBackend(model, tok, completion_batch_size=32), tok, 0
+
+
+def main() -> None:
+    print(f"loading {MODEL} ...")
+    sched = BatchScheduler(_build, make_sampler=make_sampler)
+    sched.wait_ready()
+    engine = BatchedTextEngine(sched, sched.tokenizer, "primary", MODEL)
 
     def run_one(i: int) -> int:
         msgs = [{"role": "user", "content": f"Write three sentences about the number {i}."}]

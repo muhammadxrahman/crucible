@@ -11,12 +11,19 @@ Docker is used only for stateless CPU side-services (Prometheus, Grafana). See
 
 ## Status
 
-Milestone **M3** (continuous batching and KV-cache). Concurrent requests fold into a
-running decode batch via a single-worker scheduler over `mlx-lm`'s `BatchGenerator`
-(`server.batching: true`); aggregate throughput scales with load. A prefix KV-cache reuses
-the KV state of shared prompt prefixes so only the differing suffix is prefilled. The
-single-stream path is kept for reproducible sampling. Builds on M2 (model manager: routing,
-LRU eviction, pin/TTL) and M1 (OpenAI-compatible gateway). See `docs/roadmap.md`.
+Milestone **M4** (observability and benchmarking). Native Prometheus `/metrics`, an in-app
+dashboard at `/observability` (no Docker, no external daemons), and a benchmark harness
+(`mlxd bench`) that reports prefill and decode throughput separately and throughput vs
+concurrency. Builds on M3 (continuous batching + prefix KV-cache over `mlx-lm`'s
+`BatchGenerator`), M2 (model manager: routing, LRU eviction, pin/TTL), and M1
+(OpenAI-compatible gateway). See `docs/roadmap.md`.
+
+## Observability
+
+The dashboard is in-app and self-contained — open `http://127.0.0.1:8000/observability`
+once the server is running. `GET /metrics` exposes standard Prometheus text, so an external
+Prometheus + Grafana can scrape it if long-term retention is wanted, but neither is required
+and nothing here uses Docker.
 
 ## Setup
 
@@ -32,7 +39,7 @@ uv run mlxd profile          # show detected hardware and the active profile
 uv run mlxd serve -c config/dev.yaml   # start the gateway on a tiny model (fast)
 uv run mlxd serve            # start the gateway on the production registry
 uv run mlxd models           # list, load, unload, pin models (M2+)
-uv run mlxd bench <spec>     # run the benchmark harness (M4+)
+uv run mlxd bench benchmarks/specs/tiny.yaml   # run the benchmark harness (M4+)
 uv run pytest                # run tests
 ./scripts/check.sh           # run the full pre-push gate (ruff + pytest)
 ```

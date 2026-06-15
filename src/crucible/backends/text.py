@@ -41,6 +41,12 @@ class MLXTextEngine:
         """
         mx.eval(self._model.parameters())
 
+    def stats(self) -> dict:
+        if self._prefix is None:
+            return {}
+        s = self._prefix.stats.snapshot()
+        return {"prefix_hits": s["hits"], "prefix_misses": s["misses"]}
+
     def close(self) -> None:
         """Drop references and free cached buffers so eviction reclaims memory."""
         self._model = None

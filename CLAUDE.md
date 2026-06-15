@@ -10,7 +10,7 @@ This file is the entry point. Keep it short. Detailed, stable reference lives in
 
 These are the rules that are expensive to get wrong. Treat them as invariants.
 
-- The inference engine runs NATIVE on the host. Docker on macOS runs in a Linux VM with no Metal or Neural Accelerator access, so containerizing the engine forces CPU execution and defeats the platform. Docker is allowed only for stateless CPU side-services (Prometheus, Grafana, optional vector DB). See `docs/hardware.md`.
+- The inference engine runs NATIVE on the host. Docker on macOS runs in a Linux VM with no Metal or Neural Accelerator access, so containerizing the engine forces CPU execution and defeats the platform. The end goal is a self-contained installable app, so the default install adds no external daemons: observability ships in-app (native `/metrics` exposition plus an `/observability` dashboard). External Prometheus/Grafana are an optional add-on, never required, and Docker is only ever acceptable for such optional CPU side-services. See `docs/hardware.md`.
 - MLX is the backend. It is the only path to the M5 Neural Accelerators (via Metal 4 TensorOps). Build on `mlx-lm`, `mlx-vlm`, `mlx-embeddings`. A `llama.cpp` adapter is optional, behind the same interface, as a benchmark baseline. See `docs/architecture.md`.
 - Decode is memory-bandwidth-bound; prefill is compute-bound. Prefer Mixture-of-Experts models, which read few active parameters per token. Report prefill and decode throughput as separate metrics. See `docs/hardware.md`.
 - Do not assume 64GB. Detect `hw.memsize` at startup and select a hardware profile. Below 32GB, serve a single resident model. See `docs/models.md`.
@@ -30,7 +30,7 @@ Reuse: `mlx`, `mlx-lm`, `mlx-vlm`, `mlx-embeddings` as the model runtime. Study,
 
 Work milestones in order. Do not start a milestone before the previous one passes its acceptance criteria. The current milestone is tracked below. Full milestone definitions with acceptance criteria are in `docs/roadmap.md`.
 
-Current milestone: M3 (continuous batching and KV-cache management)
+Current milestone: M4 (observability and benchmarking)
 
 ## Commands
 

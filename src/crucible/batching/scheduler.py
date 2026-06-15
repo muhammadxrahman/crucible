@@ -56,15 +56,21 @@ class _Req:
 class BatchScheduler:
     def __init__(
         self,
-        backend: BatchBackend,
-        tokenizer,
+        build,
         *,
         make_sampler,
         counters: Counters | None = None,
         clock=time.monotonic,
     ):
-        self._backend = backend
-        self._tok = tokenizer
+        # build() runs on the worker thread and returns (backend, tokenizer, resident_bytes).
+        # MLX arrays are thread-affine: the model must be loaded on the same thread that
+        # evaluates the batch, or eval fails with "no Stream(gpu, N) in current thread".
+        self._build = build
+        self._backend: BatchBackend | None = None
+        self._tok = None
+        self._nbytes = 0
+        self._ready = threading.Event()
+        self._init_error: BaseException | None = None
         self._make_sampler = make_sampler
         self.counters = counters or Counters()
         self._clock = clock
@@ -73,34 +79,53 @@ class BatchScheduler:
         self._active: dict[int, _Req] = {}
         self._cv = threading.Condition()
         self._stop = False
+        self._error: BaseException | None = None
+        self._kv_bytes = 0
         self._worker = threading.Thread(target=self._run, name="batch-scheduler", daemon=True)
         self._worker.start()
 
     # --- public API ---
 
+    def wait_ready(self, timeout: float = 300) -> int:
+        """Block until the worker has loaded the model; return its resident bytes."""
+        if not self._ready.wait(timeout):
+            raise TimeoutError("batch scheduler did not become ready")
+        if self._init_error is not None:
+            raise self._init_error
+        return self._nbytes
+
+    @property
+    def tokenizer(self):
+        return self._tok
+
     def submit(self, tokens: list[int], params: SamplingParams) -> queue.Queue:
         """Queue a request; return the channel its Delta/Final events arrive on."""
+        self._ready.wait()
+        out: queue.Queue = queue.Queue()
+        if self._error is not None or self._init_error is not None:
+            out.put(self._error_final())  # worker crashed; fail fast instead of hanging
+            return out
+        detok = self._tok.detokenizer
+        detok.reset()
         req = _Req(
             tokens=tokens,
             params=params,
             sampler=self._make_sampler(temp=params.temperature, top_p=params.top_p),
-            out=queue.Queue(),
-            detok=self._tok.detokenizer,
+            out=out,
+            detok=detok,
         )
-        req.detok.reset()
         with self._cv:
             self.counters.total_requests += 1
             self._pending.append(req)
             self.counters.queue_depth = len(self._pending)
             self._cv.notify()
-        return req.out
+        return out
 
     def stop(self) -> None:
         with self._cv:
             self._stop = True
             self._cv.notify_all()
-        self._worker.join(timeout=5)
-        self._backend.close()
+        self._worker.join(timeout=10)  # worker closes the backend on its own thread
 
     def snapshot(self) -> dict:
         with self._cv:
@@ -108,9 +133,28 @@ class BatchScheduler:
             self.counters.queue_depth = len(self._pending)
         return self.counters.snapshot()
 
+    def kv_nbytes(self) -> int:
+        return self._kv_bytes  # cached; updated by the worker thread
+
     # --- worker ---
 
     def _run(self) -> None:
+        try:
+            self._backend, self._tok, self._nbytes = self._build()
+        except BaseException as exc:  # noqa: BLE001
+            self._init_error = exc
+            self._ready.set()
+            return
+        self._ready.set()
+        try:
+            self._loop()
+        except BaseException as exc:  # noqa: BLE001
+            self._fail_all(exc)
+        finally:
+            if self._backend is not None:
+                self._backend.close()
+
+    def _loop(self) -> None:
         while True:
             with self._cv:
                 while not self._stop and not self._pending and not self._active:
@@ -123,12 +167,26 @@ class BatchScheduler:
             if new:
                 self._admit(new)
             responses = self._backend.next_generated()
+            self._kv_bytes = self._backend.kv_nbytes()
             if not responses:
                 if not self._active:
                     continue
                 time.sleep(0)  # yield; batch is draining
                 continue
             self._handle(responses)
+
+    def _fail_all(self, exc: BaseException) -> None:
+        """A worker failure must terminate in-flight and queued requests, not hang them."""
+        with self._cv:
+            self._error = exc
+            for r in list(self._active.values()) + list(self._pending):
+                r.out.put(self._error_final())
+            self._active.clear()
+            self._pending.clear()
+
+    @staticmethod
+    def _error_final() -> Final:
+        return Final(prompt_tokens=0, completion_tokens=0, finish_reason="error")
 
     def _admit(self, reqs: list[_Req]) -> None:
         prompts = [r.tokens for r in reqs]
