@@ -1,0 +1,58 @@
+# Crucible model registry. Source code never hardcodes a model path; everything
+# servable is declared here. See docs/models.md for the schema and the profile tiers.
+#
+# Replace any placeholder repo names with current mlx-community 4-bit converts at
+# build time; verify availability on Hugging Face before pinning.
+
+profile: auto # auto | air16 | base24 | pro32 | pro48 | pro64 | max128
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  memory_ceiling_gb: 50
+  batching: true
+
+models:
+  - path: mlx-community/Qwen3-30B-A3B-4bit
+    type: lm
+    served_name: primary
+    quant: 4
+    context_length: 32768
+    pin: true
+
+  - path: mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit
+    type: vlm
+    served_name: vision
+    quant: 4
+    ttl_seconds: 600
+
+  - path: mlx-community/Qwen3-Embedding-0.6B-4bit
+    type: embedding
+    served_name: embed
+    pin: true
+
+  - path: mlx-community/Qwen3-Reranker-0.6B-4bit
+    type: rerank
+    served_name: rerank
+    ttl_seconds: 1800
+
+profiles:
+  air16: # 16GB Macs
+    single_resident: true
+    default_context: 8192
+    kv_bits: 4
+    vision: false
+    roles:
+      primary: mlx-community/Llama-3.1-8B-Instruct-4bit
+      embed: mlx-community/all-MiniLM-L6-v2-8bit
+
+  pro64: # 64GB M5 Pro (primary target)
+    single_resident: false
+    default_context: 32768
+    kv_bits: 8
+    vision: true
+    roles:
+      primary: mlx-community/Qwen3-30B-A3B-4bit
+      vision: mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit
+      embed: mlx-community/Qwen3-Embedding-0.6B-4bit
+      rerank: mlx-community/Qwen3-Reranker-0.6B-4bit

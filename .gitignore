@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# uv
+# (pyproject.toml and uv.lock are committed)
+
+# Node / web build
+web/node_modules/
+web/dist/
+web/.vite/
+
+# Models and data (never commit weights or caches)
+models/
+*.safetensors
+*.gguf
+.cache/
+
+# Benchmark output
+benchmarks/reports/
+
+# OS
+.DS_Store
