@@ -44,7 +44,7 @@ pytest                       # run tests
 
 ## Conventions (summary)
 
-Python via `uv`. FastAPI, async. Pydantic for config. Frontend in Vite, React, Tailwind, shadcn/ui. Concise code with minimal comments. Tests with pytest, and each milestone ships acceptance tests before the next begins. Full conventions, including the documentation voice rules, are in `docs/conventions.md`.
+Python via `uv`. FastAPI, async. Pydantic for config. Frontend in Vite, React, Tailwind, shadcn/ui. Concise code with minimal comments, preferring clear names. Type-annotate public functions and config models. Source never hardcodes a model path or memory limit; both come from config and the active profile. Tests with pytest, and each milestone ships acceptance tests before the next begins. Bind to `127.0.0.1` by default. Report prefill and decode throughput separately, never blended.
 
 ## Documentation index
 
@@ -54,4 +54,3 @@ Python via `uv`. FastAPI, async. Pydantic for config. Frontend in Vite, React, T
 - `docs/api.md`: the HTTP API contract (endpoints, request and response shapes).
 - `docs/ui.md`: the web UI structure, views, and capability-aware rendering.
 - `docs/roadmap.md`: milestones, build lists, and acceptance criteria.
-- `docs/conventions.md`: coding standards, testing, project layout, documentation voice.
