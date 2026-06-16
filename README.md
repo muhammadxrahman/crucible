@@ -48,8 +48,8 @@ RAG, vision, observability, and UI — built on top of `mlx-lm`, `mlx-vlm`, and
 - **OpenAI drop-in** — point any OpenAI client (the `openai` Python/JS SDK, Cursor,
   Continue.dev, etc.) at `http://127.0.0.1:8000/v1` by changing only the base URL.
 - **Built-in web app** — a clean, ChatGPT-style chat at `/` with a model switcher, image and
-  document attachments, a "Grounded" toggle for cited answers, and a side panel for model
-  management and live throughput.
+  document attachments, "Grounded" and "Thinking" toggles, and a side panel that shows each
+  model's real name, loads any already-downloaded model on the fly, and tracks live throughput.
 - **Live metrics, no extra services** — an in-app dashboard at `/observability` plus a
   standard Prometheus `/metrics` endpoint. Prometheus/Grafana are optional, never required.
 - **Reliable generation on any model** — chat-sane sampling defaults with a repetition
@@ -271,8 +271,13 @@ curl http://127.0.0.1:8000/rag/documents      # list indexed documents
 
 ### Other endpoints
 
-- `GET /v1/models` — list models, their type, residency, and memory.
+- `GET /v1/models` — list models with their real `path` (the model being served), `type`,
+  residency `state` (`resident` / `loading` / `available`), and memory.
 - `POST /admin/models/{load,unload,pin}` — manage residency (also exposed via `mlxd models`).
+- `GET /admin/models/available` — list MLX models already in your local Hugging Face cache.
+- `POST /admin/models/add` — register a cached model at runtime, persist it to your config, and
+  load it in the background (this backs the web app's **＋ Add model**). Loads are non-blocking:
+  the rest of the API stays responsive while a large model loads.
 - `GET /healthz` — status, active profile, resident models.
 - `GET /metrics`, `GET /metrics/summary`, `GET /observability` — see [Observability](#observability).
 
@@ -404,9 +409,34 @@ uv run pytest                   # run the test suite
 ./scripts/check.sh              # the full gate: ruff format + lint + pytest
 ```
 
-Tests are GPU-free (they use deterministic fakes); end-to-end checks against real models live
-in `scripts/smoke_*.py`. Because the engine is Mac/Metal-specific, the gate runs locally
-before pushing.
+### Testing
+
+There are two tiers — a fast gate you run constantly, and a heavy real-model suite you run
+when you want proof the live system holds up.
+
+- **The gate (fast, GPU-free).** `./scripts/check.sh` runs `ruff format` + `ruff check` +
+  `pytest`. These tests use deterministic fakes — no model download, no GPU — so they finish
+  in about a second and gate every push (install with `./scripts/install-hooks.sh`).
+
+- **The real-model stress suite (opt-in).** `tests/stress/` boots an actual server with your
+  real models and hammers the whole surface at once: high-concurrency streamed chat, unlimited
+  long-generation, vision, embeddings, reranking, the OpenAI SDK, full RAG with citations, and
+  chaos — hot-adding / loading / unloading models *while under sustained load*, client
+  disconnects, and malformed input. It is excluded from the default run and only executes with
+  the `real` marker:
+
+  ```bash
+  uv run pytest -m real tests/stress -v        # the full gauntlet (loads the big models)
+  ```
+
+  It runs from a **temp copy** of your config with an isolated RAG store, so it never touches
+  `config/models.yaml` or your real `.crucible/rag` data. Tune it with env vars:
+  `CRUCIBLE_STRESS_CONFIG` (which registry to copy, default `config/models.yaml`),
+  `CRUCIBLE_STRESS_CONCURRENCY` (parallel requests, default 16), and `CRUCIBLE_STRESS_STARTUP`
+  (server-readiness timeout). Off Apple Silicon, or with the models absent, it skips cleanly.
+
+Single end-to-end smoke checks against real models also live in `scripts/smoke_*.py`. Because
+the engine is Mac/Metal-specific, all of this runs locally.
 
 ### Project layout
 
@@ -416,6 +446,7 @@ src/crucible/   server (gateway), manager (orchestration), backends (text/vision
                 benchmark, cli, client, service
 config/         models.yaml (default) and dev.yaml; hardware profiles + sampling defaults
 web/            the Vite + React chat app (built to web/dist, served at /)
+tests/          GPU-free unit/acceptance tests + tests/stress (opt-in real-model gauntlet)
 docs/           architecture, hardware, models, api, ui, roadmap
 benchmarks/     benchmark specs and generated reports
 ops/            optional external Prometheus/Grafana (not required)
