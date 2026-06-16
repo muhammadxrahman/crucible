@@ -155,6 +155,34 @@ def test_sampling_and_stop_are_forwarded() -> None:
     assert engine.last_params.stop == ["\n\n", "END"]
 
 
+def test_sampling_defaults_applied_when_omitted() -> None:
+    # A request that omits sampling fields gets the chat-sane server defaults, including the
+    # repetition penalty that prevents degenerate loops on any model.
+    c, engine = make_client()
+    c.post(
+        "/v1/chat/completions",
+        json={"model": "primary", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert engine.last_params.temperature == 0.7
+    assert engine.last_params.top_p == 0.95
+    assert engine.last_params.repetition_penalty == 1.1
+
+
+def test_request_overrides_sampling_defaults() -> None:
+    c, engine = make_client()
+    c.post(
+        "/v1/chat/completions",
+        json={
+            "model": "primary",
+            "messages": [{"role": "user", "content": "hi"}],
+            "temperature": 0.0,
+            "repetition_penalty": 1.3,
+        },
+    )
+    assert engine.last_params.temperature == 0.0
+    assert engine.last_params.repetition_penalty == 1.3
+
+
 def make_multi_client() -> tuple[TestClient, dict[str, FakeEngine]]:
     reg = Registry.model_validate(
         {

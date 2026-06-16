@@ -1,5 +1,5 @@
 from .loader import ConfigError, load_registry
-from .schema import ModelEntry, ProfileSpec, RagConfig, Registry, ServerConfig
+from .schema import ModelEntry, ProfileSpec, RagConfig, Registry, Sampling, ServerConfig
 
 __all__ = [
     "ConfigError",
@@ -8,5 +8,6 @@ __all__ = [
     "ProfileSpec",
     "RagConfig",
     "Registry",
+    "Sampling",
     "ServerConfig",
 ]

@@ -14,8 +14,12 @@ from typing import Protocol, runtime_checkable
 @dataclass
 class SamplingParams:
     max_tokens: int = 512
-    temperature: float = 1.0
-    top_p: float = 1.0
+    temperature: float = 0.7
+    top_p: float = 0.95
+    # A repetition penalty > 1 is what stops weak/quantized models collapsing into verbatim
+    # loops (and never emitting EOS). 1.0 disables it.
+    repetition_penalty: float = 1.1
+    repetition_context_size: int = 20
     stop: list[str] = field(default_factory=list)
 
 

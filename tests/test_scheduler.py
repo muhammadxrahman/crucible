@@ -49,8 +49,10 @@ class FakeBackend:
         self._scripts = list(scripts)
         self._next_uid = 0
         self._seqs: dict[int, list[int]] = {}
+        self.last_logits = None
 
-    def insert(self, prompts, max_tokens, caches=None, samplers=None) -> list[int]:  # noqa: ANN001
+    def insert(self, prompts, max_tokens, caches=None, samplers=None, logits_processors=None):  # noqa: ANN001
+        self.last_logits = logits_processors
         uids = []
         for _ in prompts:
             uid = self._next_uid
@@ -148,6 +150,24 @@ def test_worker_crash_fails_request_instead_of_hanging() -> None:
     # A request submitted after the crash also fails fast.
     _, final2 = drain(sched.submit([11], SamplingParams(max_tokens=8)))
     assert final2.finish_reason == "error"
+    sched.stop()
+
+
+def test_repetition_penalty_passed_to_backend() -> None:
+    backend = FakeBackend([[1, 2]])
+    sched = BatchScheduler(lambda: (backend, FakeTokenizer(), 0), make_sampler=lambda **kw: None)
+    ch = sched.submit([10], SamplingParams(max_tokens=8, repetition_penalty=1.1))
+    drain(ch)
+    assert backend.last_logits  # non-empty logits processors were built and passed
+    sched.stop()
+
+
+def test_no_repetition_penalty_passes_none() -> None:
+    backend = FakeBackend([[1, 2]])
+    sched = BatchScheduler(lambda: (backend, FakeTokenizer(), 0), make_sampler=lambda **kw: None)
+    ch = sched.submit([10], SamplingParams(max_tokens=8, repetition_penalty=1.0))
+    drain(ch)
+    assert backend.last_logits is None  # penalty disabled -> nothing passed
     sched.stop()
 
 

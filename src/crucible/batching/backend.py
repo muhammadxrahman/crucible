@@ -24,6 +24,7 @@ class BatchBackend(Protocol):
         max_tokens: list[int],
         caches: list[Any] | None = None,
         samplers: list[Any] | None = None,
+        logits_processors: list[Any] | None = None,
     ) -> list[int]:
         """Add sequences to the running batch; return their uids."""
         ...
@@ -68,8 +69,15 @@ class MLXBatchBackend:
         max_tokens: list[int],
         caches: list[Any] | None = None,
         samplers: list[Any] | None = None,
+        logits_processors: list[Any] | None = None,
     ) -> list[int]:
-        return self._gen.insert(prompts, max_tokens, caches=caches, samplers=samplers)
+        return self._gen.insert(
+            prompts,
+            max_tokens,
+            caches=caches,
+            samplers=samplers,
+            logits_processors=logits_processors,
+        )
 
     def next_generated(self) -> list[BatchResponse]:
         return self._gen.next_generated()

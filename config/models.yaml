@@ -11,6 +11,16 @@ server:
   port: 8000
   memory_ceiling_gb: 50
   batching: true
+  # Default generation settings, applied when a request omits them and overridable per
+  # request. The repetition_penalty keeps any model from collapsing into verbatim loops.
+  # Reasoning models (e.g. Qwen3, which emits long <think> blocks) may want a larger
+  # max_tokens to finish their answer.
+  sampling:
+    temperature: 0.7
+    top_p: 0.95
+    repetition_penalty: 1.1
+    repetition_context_size: 20
+    max_tokens: 512
 
 models:
   - path: mlx-community/Qwen3-30B-A3B-4bit

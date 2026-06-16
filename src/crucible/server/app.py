@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from crucible.backends import Delta, Final
+from crucible.config import Sampling
 from crucible.manager import (
     ModelManager,
     ModelStatus,
@@ -39,7 +40,6 @@ from .schemas import (
     RerankRequest,
 )
 
-DEFAULT_MAX_TOKENS = 512
 _MB = 1024 * 1024
 
 
@@ -67,14 +67,21 @@ class AdminModelRequest(BaseModel):
 
 
 def create_app(
-    manager: ModelManager, runtime: RuntimeProfile, rag=None, *, web_dist: str = "web/dist"
+    manager: ModelManager,
+    runtime: RuntimeProfile,
+    rag=None,
+    *,
+    web_dist: str = "web/dist",
+    sampling: Sampling | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Crucible", version="0.0.0")
     metrics = Metrics()
+    sampling_defaults = sampling or Sampling()
     app.state.manager = manager
     app.state.runtime = runtime
     app.state.metrics = metrics
     app.state.rag = rag
+    app.state.sampling = sampling_defaults
 
     @app.get("/healthz")
     def healthz() -> dict:
@@ -113,7 +120,7 @@ def create_app(
 
         raw = [{"role": m.role, "content": m.content} for m in req.messages]
         images = extract_images(raw)
-        params = req.sampling(DEFAULT_MAX_TOKENS)
+        params = req.sampling(sampling_defaults)
 
         if images:  # image-bearing requests route to a VLM (M6)
             name, engine, miss = _resolve_vision(manager, req.model)
@@ -139,7 +146,7 @@ def create_app(
         engine, miss = _resolve(manager, req.model)
         if miss:
             return miss
-        params = req.sampling(DEFAULT_MAX_TOKENS)
+        params = req.sampling(sampling_defaults)
         messages = [{"role": "user", "content": req.first_prompt()}]
         events = _observe(engine.stream(messages, params), metrics, req.model)
         if req.stream:

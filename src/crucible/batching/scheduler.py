@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from crucible.backends.base import Delta, Final, SamplingParams
-from crucible.backends.text import _apply_stop
+from crucible.backends.text import _apply_stop, _logits_processors
 
 from .backend import BatchBackend
 
@@ -44,6 +44,7 @@ class _Req:
     tokens: list[int]  # full prompt tokens
     params: SamplingParams
     sampler: Any
+    logits: Any  # per-request logits processors (repetition penalty), or None
     out: queue.Queue
     detok: Any
     uid: int | None = None
@@ -111,6 +112,7 @@ class BatchScheduler:
             tokens=tokens,
             params=params,
             sampler=self._make_sampler(temp=params.temperature, top_p=params.top_p),
+            logits=_logits_processors(params),
             out=out,
             detok=detok,
         )
@@ -192,7 +194,13 @@ class BatchScheduler:
         prompts = [r.tokens for r in reqs]
         max_tokens = [r.params.max_tokens for r in reqs]
         samplers = [r.sampler for r in reqs]
-        uids = self._backend.insert(prompts, max_tokens, samplers=samplers)
+        logits = [r.logits or [] for r in reqs]
+        uids = self._backend.insert(
+            prompts,
+            max_tokens,
+            samplers=samplers,
+            logits_processors=logits if any(r.logits for r in reqs) else None,
+        )
         now = self._clock()
         with self._cv:
             for uid, r in zip(uids, reqs, strict=True):

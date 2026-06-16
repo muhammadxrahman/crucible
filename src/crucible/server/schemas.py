@@ -8,8 +8,22 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from crucible.backends import SamplingParams
+from crucible.config import Sampling
 
 # --- chat ---
+
+
+def _params(req, defaults: Sampling) -> SamplingParams:
+    """Build SamplingParams, filling any field the request omitted from server defaults."""
+    pick = lambda v, d: d if v is None else v  # noqa: E731
+    return SamplingParams(
+        max_tokens=req.max_tokens or defaults.max_tokens,
+        temperature=pick(req.temperature, defaults.temperature),
+        top_p=pick(req.top_p, defaults.top_p),
+        repetition_penalty=pick(req.repetition_penalty, defaults.repetition_penalty),
+        repetition_context_size=defaults.repetition_context_size,
+        stop=_as_list(req.stop),
+    )
 
 
 class ChatMessage(BaseModel):
@@ -22,18 +36,14 @@ class ChatCompletionRequest(BaseModel):
     model: str
     messages: list[ChatMessage]
     stream: bool = False
-    temperature: float = 1.0
-    top_p: float = 1.0
+    temperature: float | None = Field(default=None, ge=0)
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    repetition_penalty: float | None = Field(default=None, ge=1)
     max_tokens: int | None = Field(default=None, gt=0)
     stop: str | list[str] | None = None
 
-    def sampling(self, default_max_tokens: int) -> SamplingParams:
-        return SamplingParams(
-            max_tokens=self.max_tokens or default_max_tokens,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            stop=_as_list(self.stop),
-        )
+    def sampling(self, defaults: Sampling) -> SamplingParams:
+        return _params(self, defaults)
 
     def rendered_messages(self) -> list[dict]:
         return [{"role": m.role, "content": _flatten(m.content)} for m in self.messages]
@@ -43,18 +53,14 @@ class CompletionRequest(BaseModel):
     model: str
     prompt: str | list[str]
     stream: bool = False
-    temperature: float = 1.0
-    top_p: float = 1.0
+    temperature: float | None = Field(default=None, ge=0)
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    repetition_penalty: float | None = Field(default=None, ge=1)
     max_tokens: int | None = Field(default=None, gt=0)
     stop: str | list[str] | None = None
 
-    def sampling(self, default_max_tokens: int) -> SamplingParams:
-        return SamplingParams(
-            max_tokens=self.max_tokens or default_max_tokens,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            stop=_as_list(self.stop),
-        )
+    def sampling(self, defaults: Sampling) -> SamplingParams:
+        return _params(self, defaults)
 
     def first_prompt(self) -> str:
         return self.prompt[0] if isinstance(self.prompt, list) else self.prompt

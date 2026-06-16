@@ -15,6 +15,20 @@ def test_real_registry_validates(real_config: Path) -> None:
     assert reg.profiles["air16"].vision is False
 
 
+def test_sampling_defaults_and_override() -> None:
+    # Defaults are chat-sane with a repetition penalty so any model terminates.
+    default = Registry.model_validate({}).server.sampling
+    assert default.temperature == 0.7
+    assert default.repetition_penalty == 1.1
+    assert default.top_p == 0.95
+    # Config can override them per deployment.
+    over = Registry.model_validate(
+        {"server": {"sampling": {"temperature": 0.3, "repetition_penalty": 1.25}}}
+    ).server.sampling
+    assert over.temperature == 0.3
+    assert over.repetition_penalty == 1.25
+
+
 def test_missing_file_rejected(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
         load_registry(tmp_path / "nope.yaml")

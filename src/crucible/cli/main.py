@@ -105,7 +105,7 @@ def serve(
             f"rerank={roles['rerank_name'] or 'off'}",
             fg=typer.colors.CYAN,
         )
-    application = create_app(manager, runtime, rag)
+    application = create_app(manager, runtime, rag, sampling=reg.server.sampling)
     typer.secho(
         f"serving {len(reg.models)} model(s) on http://{bind_host}:{bind_port} "
         f"[resident: {manager.resident_models() or 'none (lazy)'}]",

@@ -29,11 +29,23 @@ class ModelEntry(_Strict):
     adapters: list[str] = Field(default_factory=list)
 
 
+class Sampling(_Strict):
+    """Default generation settings, applied when a request omits them. Chat-sane and with a
+    repetition penalty so any model terminates instead of looping; overridable per request."""
+
+    temperature: float = Field(default=0.7, ge=0)
+    top_p: float = Field(default=0.95, gt=0, le=1)
+    repetition_penalty: float = Field(default=1.1, ge=1)
+    repetition_context_size: int = Field(default=20, gt=0)
+    max_tokens: int = Field(default=512, gt=0)
+
+
 class ServerConfig(_Strict):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, gt=0, lt=65536)
     memory_ceiling_gb: float | None = Field(default=None, gt=0)
     batching: bool = True
+    sampling: Sampling = Field(default_factory=lambda: Sampling())
 
 
 class ProfileSpec(_Strict):

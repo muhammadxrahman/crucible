@@ -11,7 +11,7 @@ from collections.abc import Iterator
 import mlx.core as mx
 from mlx_lm import load, stream_generate
 from mlx_lm.models.cache import can_trim_prompt_cache, make_prompt_cache, trim_prompt_cache
-from mlx_lm.sample_utils import make_sampler
+from mlx_lm.sample_utils import make_logits_processors, make_sampler
 
 from .base import Delta, Final, GenEvent, SamplingParams
 
@@ -68,6 +68,9 @@ class MLXTextEngine:
         finish_reason = "length"
 
         kwargs = {"prompt_cache": cache} if cache is not None else {}
+        processors = _logits_processors(params)
+        if processors:
+            kwargs["logits_processors"] = processors
         for resp in stream_generate(
             self._model,
             self._tokenizer,
@@ -125,6 +128,20 @@ class MLXTextEngine:
             self._prefix.store(prompt, state)
         except Exception:
             pass  # caching is best-effort; never fail a request over it
+
+
+def _logits_processors(params: SamplingParams):
+    """Build the repetition-penalty logits processors, or None when disabled (penalty <= 1).
+
+    The penalty is what keeps weak/quantized models from collapsing into verbatim loops and
+    failing to emit EOS.
+    """
+    if params.repetition_penalty and params.repetition_penalty > 1.0:
+        return make_logits_processors(
+            repetition_penalty=params.repetition_penalty,
+            repetition_context_size=params.repetition_context_size,
+        )
+    return None
 
 
 def _apply_stop(new_text: str, so_far: str, stops: list[str]) -> tuple[str, bool]:

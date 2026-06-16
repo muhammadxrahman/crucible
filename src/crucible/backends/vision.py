@@ -74,6 +74,7 @@ class MLXVLMEngine:
             comp = prompt_tokens = 0
             prefill_tps = decode_tps = 0.0
             finish = "length"
+            penalty = params.repetition_penalty if params.repetition_penalty > 1.0 else None
             for r in mlx_vlm.stream_generate(
                 self._model,
                 self._proc,
@@ -81,6 +82,9 @@ class MLXVLMEngine:
                 image=image_arg,
                 max_tokens=params.max_tokens,
                 temperature=params.temperature,
+                top_p=params.top_p,
+                repetition_penalty=penalty,
+                repetition_context_size=params.repetition_context_size,
             ):
                 prompt_tokens = r.prompt_tokens or prompt_tokens
                 prefill_tps = r.prompt_tps or prefill_tps
