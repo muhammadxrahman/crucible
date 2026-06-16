@@ -54,11 +54,11 @@ class MLXTextEngine:
         self._tokenizer = None
         mx.clear_cache()
 
-    def _render_prompt(self, messages: list[dict]) -> list[int]:
-        return self._tokenizer.apply_chat_template(messages, add_generation_prompt=True)
+    def _render_prompt(self, messages: list[dict], enable_thinking: bool) -> list[int]:
+        return render_chat_prompt(self._tokenizer, messages, enable_thinking=enable_thinking)
 
     def stream(self, messages: list[dict], params: SamplingParams) -> Iterator[GenEvent]:
-        prompt = self._render_prompt(messages)
+        prompt = self._render_prompt(messages, params.enable_thinking)
         sampler = make_sampler(temp=params.temperature, top_p=params.top_p)
         cache, feed = self._seed_cache(prompt)
 
@@ -133,6 +133,20 @@ class MLXTextEngine:
             self._prefix.store(prompt, state)
         except Exception:
             pass  # caching is best-effort; never fail a request over it
+
+
+def render_chat_prompt(tokenizer, messages: list[dict], *, enable_thinking: bool = False):
+    """Apply the chat template, passing `enable_thinking` for reasoning models (Qwen3).
+
+    Models whose template ignores the flag are unaffected; a tokenizer that rejects the
+    kwarg outright falls back to a plain render.
+    """
+    try:
+        return tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, enable_thinking=enable_thinking
+        )
+    except TypeError:
+        return tokenizer.apply_chat_template(messages, add_generation_prompt=True)
 
 
 def _logits_processors(params: SamplingParams):

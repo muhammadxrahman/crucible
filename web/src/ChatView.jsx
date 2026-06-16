@@ -82,8 +82,15 @@ export default function ChatView({ models, hasVision, hasRag }) {
     if (documents.length) {
       try {
         const res = await uploadDocs(documents);
-        setDocs((cur) => [...cur, ...res.documents.map((d) => d.source.split("/").pop())]);
+        const names = res.documents.map((d) => d.source.split("/").pop());
+        setDocs((cur) => [...new Set([...cur, ...names])]); // dedupe re-uploads
         setGrounded(true);
+        if (names.length) {
+          setMessages((cur) => [
+            ...cur,
+            { role: "note", text: `📎 Indexed ${names.join(", ")} — ask with Grounded on.` },
+          ]);
+        }
       } catch (e) {
         setMessages((cur) => [...cur, { role: "assistant", text: `⚠ upload failed: ${e.message}` }]);
       }
@@ -125,7 +132,11 @@ export default function ChatView({ models, hasVision, hasRag }) {
               Grounded
             </label>
           )}
-          {docs.length > 0 && <span className="chips">{docs.length} doc(s) indexed</span>}
+          {docs.length > 0 && (
+            <span className="chips" title={docs.join(", ")}>
+              📎 indexed: {docs.join(", ")}
+            </span>
+          )}
         </div>
 
         {images.length > 0 && (
@@ -171,6 +182,9 @@ export default function ChatView({ models, hasVision, hasRag }) {
 }
 
 function Message({ m }) {
+  if (m.role === "note") {
+    return <div className="note">{m.text}</div>;
+  }
   return (
     <div className={`msg ${m.role}`}>
       <div className="role">{m.role === "user" ? "you" : "assistant"}</div>

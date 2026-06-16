@@ -1,7 +1,25 @@
 """Engine-level logic that must not regress, tested without loading a model."""
 
 from crucible.backends import Delta, Final, SamplingParams, TextEngine
-from crucible.backends.text import _apply_stop
+from crucible.backends.text import _apply_stop, render_chat_prompt
+
+
+def test_render_chat_prompt_passes_enable_thinking() -> None:
+    class Tok:
+        def apply_chat_template(self, messages, add_generation_prompt=True, **kw):
+            return kw  # echo the kwargs back
+
+    out = render_chat_prompt(Tok(), [{"role": "user", "content": "hi"}], enable_thinking=False)
+    assert out == {"enable_thinking": False}
+
+
+def test_render_chat_prompt_falls_back_when_unsupported() -> None:
+    class StrictTok:  # template that does not accept enable_thinking
+        def apply_chat_template(self, messages, add_generation_prompt=True):
+            return "prompt"
+
+    out = render_chat_prompt(StrictTok(), [{"role": "user", "content": "hi"}], enable_thinking=True)
+    assert out == "prompt"  # gracefully falls back, no crash
 
 
 def test_apply_stop_no_stops_passes_through() -> None:

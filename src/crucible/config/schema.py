@@ -38,6 +38,7 @@ class Sampling(_Strict):
     repetition_penalty: float = Field(default=1.1, ge=1)
     repetition_context_size: int = Field(default=20, gt=0)
     loop_guard: bool = True  # hard-stop runaway repetition loops
+    enable_thinking: bool = False  # off -> reasoning models answer directly (no <think>)
     max_tokens: int = Field(default=512, gt=0)
 
 
@@ -68,6 +69,9 @@ class RagConfig(_Strict):
     chunk_overlap: int = Field(default=40, ge=0)  # words of overlap
     store_dir: str = ".crucible/rag"
     max_context_chars: int = Field(default=6000, gt=0)
+    # Token budget for the grounded answer. Reasoning models (Qwen3 emits <think> blocks)
+    # need headroom so the answer isn't cut off; raise this if answers truncate.
+    answer_max_tokens: int = Field(default=1024, gt=0)
 
 
 class Registry(_Strict):

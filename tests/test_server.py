@@ -183,6 +183,25 @@ def test_request_overrides_sampling_defaults() -> None:
     assert engine.last_params.repetition_penalty == 1.3
 
 
+def test_thinking_disabled_by_default_and_overridable() -> None:
+    # Reasoning models (Qwen3) otherwise spend the whole budget in <think> and never answer.
+    c, engine = make_client()
+    c.post(
+        "/v1/chat/completions",
+        json={"model": "primary", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert engine.last_params.enable_thinking is False
+    c.post(
+        "/v1/chat/completions",
+        json={
+            "model": "primary",
+            "messages": [{"role": "user", "content": "hi"}],
+            "enable_thinking": True,
+        },
+    )
+    assert engine.last_params.enable_thinking is True
+
+
 def test_loop_guard_default_on_and_overridable() -> None:
     c, engine = make_client()
     c.post(

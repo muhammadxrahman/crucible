@@ -75,7 +75,10 @@ button { font: inherit; cursor: pointer; }
 .composer select, .toggle { background: var(--panel); color: var(--text); border: 1px solid var(--line);
   border-radius: 8px; padding: 5px 8px; font-size: 13px; }
 .toggle { display: flex; align-items: center; gap: 6px; }
-.chips { color: var(--muted); font-size: 12px; }
+.chips { color: var(--muted); font-size: 12px; max-width: 320px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.note { color: var(--muted); font-size: 12px; text-align: center; margin: 2px auto;
+  max-width: 760px; }
 .thumbs { display: flex; gap: 8px; max-width: 800px; width: 100%; margin: 0 auto; }
 .thumb { position: relative; }
 .thumb img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }

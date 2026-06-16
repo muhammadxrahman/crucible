@@ -23,6 +23,9 @@ class SamplingParams:
     # Hard stop if generation collapses into a tight repetition loop (a safety net under the
     # penalty, for weak models). Disable for intentionally repetitive output.
     loop_guard: bool = True
+    # Reasoning models (Qwen3) emit a <think> block by default and can spend the whole token
+    # budget thinking; off gives direct answers. Overridable per request.
+    enable_thinking: bool = False
     stop: list[str] = field(default_factory=list)
 
 

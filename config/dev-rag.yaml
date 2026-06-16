@@ -1,0 +1,29 @@
+# Development registry with the full RAG stack on small, fast models. Lets you exercise
+# document upload, grounded answers, and reranking locally without the 30B download.
+#   uv run mlxd serve -c config/dev-rag.yaml
+
+profile: auto
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  batching: false
+
+models:
+  - path: mlx-community/Qwen2.5-0.5B-Instruct-4bit
+    type: lm
+    served_name: primary
+    pin: true
+  - path: mlx-community/bge-small-en-v1.5-bf16
+    type: embedding
+    served_name: embed
+    pin: true
+  - path: mlx-community/Qwen3-Reranker-0.6B-4bit
+    type: rerank
+    served_name: rerank
+
+rag:
+  store_dir: .crucible/rag-dev
+  answer_max_tokens: 256
+  top_k: 8
+  top_n: 4

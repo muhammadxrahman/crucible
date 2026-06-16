@@ -5,7 +5,7 @@ The gateway exposes an OpenAI-compatible surface, an Anthropic messages surface,
 ## OpenAI-compatible endpoints
 
 ### POST /v1/chat/completions
-Chat with a text or vision model. Honors `model`, `messages`, `stream`, `temperature`, `top_p`, `repetition_penalty`, `max_tokens`, `stop`, and tool-calling fields. Any omitted sampling field falls back to the server `sampling` defaults (chat-sane, with a repetition penalty so generation does not collapse into loops). Streaming uses SSE with `data:` chunks terminated by `data: [DONE]`. Vision input uses the standard content-parts shape with `image_url` items (HTTP URLs and base64 data URLs both accepted).
+Chat with a text or vision model. Honors `model`, `messages`, `stream`, `temperature`, `top_p`, `repetition_penalty`, `enable_thinking`, `max_tokens`, `stop`, and tool-calling fields. Any omitted sampling field falls back to the server `sampling` defaults (chat-sane, with a repetition penalty so generation does not collapse into loops). `enable_thinking` is off by default, so reasoning models (Qwen3) answer directly rather than emitting a `<think>` block; set it true per request to opt into reasoning. Streaming uses SSE with `data:` chunks terminated by `data: [DONE]`. Vision input uses the standard content-parts shape with `image_url` items (HTTP URLs and base64 data URLs both accepted).
 
 ### POST /v1/completions
 Legacy text completion for a single prompt. Same sampling fields, same streaming behavior.

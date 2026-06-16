@@ -82,6 +82,8 @@ def create_app(
     app.state.metrics = metrics
     app.state.rag = rag
     app.state.sampling = sampling_defaults
+    if rag is not None:
+        rag.metrics = metrics  # so RAG generation updates throughput metrics too
 
     @app.get("/healthz")
     def healthz() -> dict:

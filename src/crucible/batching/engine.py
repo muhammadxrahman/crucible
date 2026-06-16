@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from crucible.backends.base import Final, GenEvent, SamplingParams
+from crucible.backends.text import render_chat_prompt
 
 from .scheduler import BatchScheduler
 
@@ -21,7 +22,7 @@ class BatchedTextEngine:
         self.model_path = model_path
 
     def stream(self, messages: list[dict], params: SamplingParams) -> Iterator[GenEvent]:
-        tokens = self._tok.apply_chat_template(messages, add_generation_prompt=True)
+        tokens = render_chat_prompt(self._tok, messages, enable_thinking=params.enable_thinking)
         channel = self._scheduler.submit(list(tokens), params)
         while True:
             event = channel.get()

@@ -8,14 +8,18 @@ reuses the same residency, routing, and eviction as every other model. No networ
 from __future__ import annotations
 
 import hashlib
+import re
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from crucible.backends import Delta, SamplingParams
+from crucible.backends import Delta, Final, SamplingParams
 
 from .chunk import chunk_text
 from .documents import iter_files, load_text
 from .store import Chunk, VectorStore
+
+_THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
 _SYSTEM = (
     "Answer the question using only the numbered sources below. Cite the sources you use "
@@ -62,6 +66,7 @@ class RagPipeline:
         self.generator_name = generator_name
         self.rerank_name = rerank_name
         self.store = store if store is not None else VectorStore.load(cfg.store_dir)
+        self.metrics = None  # set by create_app so RAG generation updates throughput metrics
 
     # --- ingestion ---
 
@@ -84,6 +89,7 @@ class RagPipeline:
                 Chunk(id=f"{doc_id}:{i}", doc_id=doc_id, source=str(f), text=t)
                 for i, t in enumerate(texts)
             ]
+            self.store.remove_doc(doc_id)  # replace on re-ingest instead of duplicating
             self.store.add(chunks, embeds)
             documents.append({"doc_id": doc_id, "source": str(f), "chunks": len(chunks)})
 
@@ -138,11 +144,20 @@ class RagPipeline:
             {"role": "system", "content": _SYSTEM},
             {"role": "user", "content": f"Sources:\n{context}\n\nQuestion: {question}"},
         ]
+        params = SamplingParams(max_tokens=self.cfg.answer_max_tokens, temperature=0.0)
+
         text = ""
-        for ev in engine.stream(messages, SamplingParams(max_tokens=400, temperature=0.0)):
+        start = time.perf_counter()
+        first = False
+        for ev in engine.stream(messages, params):
             if isinstance(ev, Delta):
+                if not first and self.metrics is not None:
+                    self.metrics.observe_ttft(self.generator_name, time.perf_counter() - start)
+                    first = True
                 text += ev.text
-        return text.strip()
+            elif isinstance(ev, Final) and self.metrics is not None:
+                self.metrics.observe_final(self.generator_name, ev, time.perf_counter() - start)
+        return _strip_think(text)
 
 
 def _format_context(sources: list[Source], max_chars: int) -> str:
@@ -154,6 +169,15 @@ def _format_context(sources: list[Source], max_chars: int) -> str:
         out.append(block)
         used += len(block)
     return "\n\n".join(out)
+
+
+def _strip_think(text: str) -> str:
+    """Remove reasoning-model <think>…</think> blocks from the shown answer."""
+    text = _THINK.sub("", text)
+    # If generation was cut off inside an unclosed think block, drop it (no answer leaked).
+    if "<think>" in text and "</think>" not in text:
+        text = text.split("<think>", 1)[0]
+    return text.strip()
 
 
 def _doc_id(path: Path) -> str:

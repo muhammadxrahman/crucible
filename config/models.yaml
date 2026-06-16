@@ -12,14 +12,15 @@ server:
   memory_ceiling_gb: 50
   batching: true
   # Default generation settings, applied when a request omits them and overridable per
-  # request. The repetition_penalty keeps any model from collapsing into verbatim loops.
-  # Reasoning models (e.g. Qwen3, which emits long <think> blocks) may want a larger
-  # max_tokens to finish their answer.
+  # request. repetition_penalty keeps any model from collapsing into verbatim loops.
+  # enable_thinking: off by default so reasoning models (Qwen3) answer directly instead of
+  # spending the whole budget in a <think> block; set true (or per request) for reasoning.
   sampling:
     temperature: 0.7
     top_p: 0.95
     repetition_penalty: 1.1
     repetition_context_size: 20
+    enable_thinking: false
     max_tokens: 512
 
 models:

@@ -59,6 +59,37 @@ class FakeGen:
         yield Final(prompt_tokens=10, completion_tokens=9, finish_reason="stop")
 
 
+class RecordingGen:
+    """Records the SamplingParams it received and reports throughput."""
+
+    type = "lm"
+
+    def __init__(self) -> None:
+        self.last_params = None
+
+    def stream(self, messages, params):
+        self.last_params = params
+        yield Delta("Apple Silicon uses unified memory [1].")
+        yield Final(
+            prompt_tokens=5,
+            completion_tokens=6,
+            finish_reason="stop",
+            prefill_tps=200.0,
+            decode_tps=88.0,
+        )
+
+
+class ThinkGen:
+    """A reasoning model: emits a <think> block before the answer."""
+
+    type = "lm"
+
+    def stream(self, messages, params):
+        yield Delta("<think>\nThe sources are about Apple Silicon.\n</think>\n\n")
+        yield Delta("Apple Silicon uses unified memory [1].")
+        yield Final(prompt_tokens=5, completion_tokens=8, finish_reason="stop")
+
+
 # --- chunking ---
 
 
@@ -169,10 +200,98 @@ def test_query_with_empty_store(tmp_path: Path) -> None:
     assert out["sources"] == []
 
 
+# --- regressions: duplicate ingestion, truncation, metrics, <think> ---
+
+
+def test_load_deduplicates_stale_duplicate_chunks(tmp_path: Path) -> None:
+    # A store written before the fix can contain the same chunk id many times; loading
+    # collapses them so old duplicate-document data self-heals.
+    s = VectorStore()
+    dup = Chunk("d:0", "d", "r.pdf", "apple silicon")
+    s.add([dup, dup, dup], [_vec("apple"), _vec("apple"), _vec("apple")])
+    s.save(tmp_path)
+    loaded = VectorStore.load(tmp_path)
+    assert len(loaded) == 1
+    assert len(loaded.documents()) == 1
+
+
+def test_store_remove_doc_drops_only_that_doc() -> None:
+    s = VectorStore()
+    s.add(
+        [Chunk("a:0", "a", "a.txt", "apple"), Chunk("b:0", "b", "b.txt", "banana")],
+        [_vec("apple"), _vec("banana")],
+    )
+    assert s.remove_doc("a") == 1
+    assert len(s) == 1
+    # the surviving chunk and its vector stay aligned
+    hit = s.search(_vec("banana"), 1)[0][0]
+    assert hit.doc_id == "b" and hit.text == "banana"
+
+
+def test_reingest_same_doc_replaces_not_duplicates(tmp_path: Path) -> None:
+    pipe = _pipeline(tmp_path, top_k=10, top_n=5)
+    corpus = str(_corpus(tmp_path))
+    first = pipe.ingest(corpus)["indexed_chunks"]
+    second = pipe.ingest(corpus)["indexed_chunks"]  # same files again
+    assert second == first  # replaced, not appended
+    assert len(pipe.store.documents()) == 2  # still two docs, not four
+
+
+def test_query_sources_are_distinct_after_reingest(tmp_path: Path) -> None:
+    # This is the screenshot bug: the same doc re-uploaded showed up as [1]..[5] duplicates.
+    pipe = _pipeline(tmp_path, top_k=10, top_n=5)
+    corpus = str(_corpus(tmp_path))
+    for _ in range(3):
+        pipe.ingest(corpus)
+    out = pipe.query("apple silicon")
+    seen = [(s["doc_id"], s["text"]) for s in out["sources"]]
+    assert len(seen) == len(set(seen))  # no duplicated chunks
+
+
+def _think_pipeline(tmp_path: Path, gen, **cfg_kw) -> RagPipeline:
+    mgr = FakeManager()
+    mgr._e["gen"] = gen
+    cfg = RagConfig(store_dir=str(tmp_path / "store"), chunk_size=40, chunk_overlap=8, **cfg_kw)
+    return RagPipeline(
+        mgr,
+        cfg,
+        embed_name="embed",
+        generator_name="gen",
+        rerank_name="rerank",
+        store=VectorStore(),
+    )
+
+
+def test_generate_strips_think_block(tmp_path: Path) -> None:
+    pipe = _think_pipeline(tmp_path, ThinkGen())
+    pipe.ingest(str(_corpus(tmp_path)))
+    out = pipe.query("apple")
+    assert "<think>" not in out["answer"] and "</think>" not in out["answer"]
+    assert out["answer"].startswith("Apple Silicon uses unified memory")
+
+
+def test_rag_uses_configured_answer_max_tokens(tmp_path: Path) -> None:
+    rec = RecordingGen()
+    pipe = _think_pipeline(tmp_path, rec, answer_max_tokens=777)
+    pipe.ingest(str(_corpus(tmp_path)))
+    pipe.query("apple")
+    assert rec.last_params.max_tokens == 777  # not the old hardcoded 400
+
+
+def test_rag_query_records_throughput_metrics(tmp_path: Path) -> None:
+    from crucible.observability import Metrics
+
+    pipe = _think_pipeline(tmp_path, RecordingGen())
+    pipe.metrics = Metrics()
+    pipe.ingest(str(_corpus(tmp_path)))
+    pipe.query("apple")
+    assert pipe.metrics.summary()["current"]["decode_tps"] == 88.0
+
+
 # --- endpoints ---
 
 
-def _rag_client(tmp_path: Path) -> TestClient:
+def _rag_client(tmp_path: Path, gen=None) -> TestClient:
     reg = Registry.model_validate(
         {
             "models": [
@@ -191,7 +310,7 @@ def _rag_client(tmp_path: Path) -> TestClient:
         kv_bits=8,
         vision=True,
     )
-    engines = {"gen": FakeGen(), "embed": FakeEmbed(), "rerank": FakeRerank()}
+    engines = {"gen": gen or FakeGen(), "embed": FakeEmbed(), "rerank": FakeRerank()}
 
     def loader(entry):
         return engines[entry.served_name], 10
@@ -207,6 +326,38 @@ def _rag_client(tmp_path: Path) -> TestClient:
         store=VectorStore(),
     )
     return TestClient(create_app(manager, runtime, rag))
+
+
+_RESUME = b"Muhammad Rahman resume. Prometheus metrics optimization improved throughput. " * 8
+
+
+def test_repeated_upload_indexes_one_document(tmp_path: Path) -> None:
+    # The screenshot scenario: the same file uploaded several times must not duplicate.
+    c = _rag_client(tmp_path)
+    for _ in range(3):
+        r = c.post("/rag/upload", files={"files": ("resume.md", _RESUME, "text/markdown")})
+        assert r.status_code == 200
+    docs = c.get("/rag/documents").json()["documents"]
+    assert len(docs) == 1  # one document, not three
+
+    out = c.post("/rag/query", json={"query": "throughput"}).json()
+    seen = [(s["doc_id"], s["text"]) for s in out["sources"]]
+    assert len(seen) == len(set(seen))  # sources are distinct, not [1]..[5] copies
+
+
+def test_upload_response_names_the_indexed_document(tmp_path: Path) -> None:
+    c = _rag_client(tmp_path)
+    res = c.post("/rag/upload", files={"files": ("resume.md", _RESUME, "text/markdown")}).json()
+    names = [d["source"].split("/")[-1] for d in res["documents"]]
+    assert "resume.md" in names  # the UI can show this instead of relying on the model
+
+
+def test_rag_query_updates_throughput_metrics_endpoint(tmp_path: Path) -> None:
+    c = _rag_client(tmp_path, gen=RecordingGen())
+    c.post("/rag/upload", files={"files": ("n.md", b"apple silicon memory " * 40, "text/markdown")})
+    assert c.get("/metrics/summary").json()["current"]["decode_tps"] == 0.0
+    c.post("/rag/query", json={"query": "apple"})
+    assert c.get("/metrics/summary").json()["current"]["decode_tps"] == 88.0
 
 
 def test_embeddings_endpoint(tmp_path: Path) -> None:

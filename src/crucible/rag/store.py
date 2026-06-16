@@ -37,6 +37,18 @@ class VectorStore:
         self._vecs = arr if self._vecs is None else np.vstack([self._vecs, arr])
         self._chunks.extend(chunks)
 
+    def remove_doc(self, doc_id: str) -> int:
+        """Drop all chunks (and their vectors) for a document. Returns how many were removed.
+
+        Re-ingesting a document calls this first so re-uploads replace rather than duplicate.
+        """
+        keep = [i for i, c in enumerate(self._chunks) if c.doc_id != doc_id]
+        removed = len(self._chunks) - len(keep)
+        if removed:
+            self._chunks = [self._chunks[i] for i in keep]
+            self._vecs = self._vecs[keep] if (self._vecs is not None and keep) else None
+        return removed
+
     def search(self, query_vec: list[float], k: int) -> list[tuple[Chunk, float]]:
         if self._vecs is None or not self._chunks:
             return []
@@ -73,7 +85,15 @@ class VectorStore:
         vecs_file = d / "vectors.npy"
         if not chunks_file.is_file():
             return store
-        store._chunks = [Chunk(**json.loads(line)) for line in chunks_file.read_text().splitlines()]
-        if vecs_file.is_file():
-            store._vecs = np.load(vecs_file)
+        chunks = [Chunk(**json.loads(line)) for line in chunks_file.read_text().splitlines()]
+        vecs = np.load(vecs_file) if vecs_file.is_file() else None
+        # Drop duplicate chunk ids, keeping the first. This heals stores written before
+        # re-ingest replaced instead of appended (the duplicate-document bug).
+        seen: set[str] = set()
+        keep = [i for i, c in enumerate(chunks) if not (c.id in seen or seen.add(c.id))]
+        store._chunks = [chunks[i] for i in keep]
+        if vecs is not None and len(vecs) == len(chunks):
+            store._vecs = vecs[keep] if keep else None
+        elif vecs is not None:
+            store._vecs = vecs  # length mismatch (shouldn't happen): leave untouched
         return store

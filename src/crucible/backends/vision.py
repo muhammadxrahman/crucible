@@ -66,9 +66,18 @@ class MLXVLMEngine:
             import mlx_vlm
 
             paths = [self._image_path(ref) for ref in images]
-            prompt = mlx_vlm.apply_chat_template(
-                self._proc, self._cfg, text_messages(messages), num_images=len(paths)
-            )
+            try:
+                prompt = mlx_vlm.apply_chat_template(
+                    self._proc,
+                    self._cfg,
+                    text_messages(messages),
+                    num_images=len(paths),
+                    enable_thinking=params.enable_thinking,
+                )
+            except TypeError:  # processor template doesn't take the flag
+                prompt = mlx_vlm.apply_chat_template(
+                    self._proc, self._cfg, text_messages(messages), num_images=len(paths)
+                )
             image_arg = paths[0] if len(paths) == 1 else (paths or None)
 
             acc = ""
