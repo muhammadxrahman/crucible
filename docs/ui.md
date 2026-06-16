@@ -4,9 +4,13 @@ The web UI is the control plane: it exposes every capability behind one interfac
 
 ## Stack and serving
 
-- Vite, React, Tailwind, shadcn/ui components.
-- Built to static assets and served by the gateway at `/` in production, so the platform is one process and one origin (no CORS).
-- During development, run the Vite dev server against the gateway.
+- Vite + React, with a single small hand-written stylesheet. Deliberately lean (no Tailwind or component library): the durable contract is the HTTP API, and the UI is intentionally thin and replaceable. The planned end state moves the UI to Swift/SwiftUI bundled as a resource-efficient `.app`; because the React UI only ever calls the public API, a Swift client reuses the same endpoints unchanged.
+- Built to `web/dist` and served by the gateway at `/` (mounted last so API routes win), so the platform is one process and one origin (no CORS). The mount is skipped when no build is present, so the API runs without a build.
+- During development, run the Vite dev server (`npm --prefix web run dev`), which proxies the API paths to the gateway.
+
+## Layout (M8)
+
+A chat-centric single view, not a multi-tab dashboard. The chat box is the centerpiece (model switcher, streaming, image and document attachments, a Grounded toggle for cited RAG answers). A collapsible side panel handles model load/unload/pin, shows the active profile and a resident-memory bar, and polls live prefill/decode/TTFT from `/metrics/summary`. Images attach inline (routed to the VLM); documents upload to the RAG store via `/rag/upload`.
 
 ## Capability-aware rendering
 

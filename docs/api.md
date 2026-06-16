@@ -46,7 +46,10 @@ These back the web UI's model and RAG views. They are part of the public API and
 Load, unload, or pin a model by `served_name`. Subject to the active profile's memory ceiling and residency rules.
 
 ### POST /rag/ingest
-Ingests files or a directory: load, chunk, embed, upsert into the vector store. Returns indexed document identifiers.
+Ingests files or a directory by server-side path: load, chunk, embed, upsert into the vector store. Returns indexed document identifiers.
+
+### POST /rag/upload
+Multipart file upload for browser clients (which cannot supply a server path). Persists the uploaded files under the RAG store and ingests them. Same response shape as `/rag/ingest`.
 
 ### POST /rag/query
 Runs two-stage retrieval (dense search then rerank) and grounded generation. Returns the answer plus the source chunks used, so the UI can render citations.
@@ -60,5 +63,7 @@ Lists indexed documents.
 - Streaming defaults on for chat where the client requests it.
 - All endpoints bind to `127.0.0.1` by default. Exposing on a network requires adding authentication first.
 - Request routing is by the `model` field against `served_name`. An unknown model returns a clear 404-class error rather than silently falling back.
+- Image-bearing chat requests (content parts with `image_url`) route to a VLM automatically; text-only requests use the text model.
+- The built web UI is served at `/` when a build is present (see `ui.md`). It is a client of these endpoints with no privileged path.
 
 This file is the contract. When an endpoint's behavior changes, update this file in the same change.

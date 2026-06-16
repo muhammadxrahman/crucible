@@ -12,9 +12,11 @@ import time
 from collections.abc import Iterator
 from functools import lru_cache
 from importlib.resources import files
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from crucible.backends import Delta, Final
@@ -64,7 +66,9 @@ class AdminModelRequest(BaseModel):
     pinned: bool = True
 
 
-def create_app(manager: ModelManager, runtime: RuntimeProfile, rag=None) -> FastAPI:
+def create_app(
+    manager: ModelManager, runtime: RuntimeProfile, rag=None, *, web_dist: str = "web/dist"
+) -> FastAPI:
     app = FastAPI(title="Crucible", version="0.0.0")
     metrics = Metrics()
     app.state.manager = manager
@@ -216,6 +220,24 @@ def create_app(manager: ModelManager, runtime: RuntimeProfile, rag=None) -> Fast
         if rag is None:
             return _rag_disabled()
         return JSONResponse({"documents": rag.documents()})
+
+    @app.post("/rag/upload")
+    def rag_upload(files: list[UploadFile] = File(...)):  # noqa: B008
+        # Browsers send file bytes, not server paths: persist them, then ingest.
+        if rag is None:
+            return _rag_disabled()
+        upload_dir = Path(rag.cfg.store_dir) / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for f in files:
+            dest = upload_dir / Path(f.filename or "upload").name
+            dest.write_bytes(f.file.read())
+            paths.append(str(dest))
+        return JSONResponse(rag.ingest(paths))
+
+    # Serve the built web UI at / when present. Mounted last so API routes win.
+    if Path(web_dist).is_dir():
+        app.mount("/", StaticFiles(directory=web_dist, html=True), name="web")
 
     return app
 

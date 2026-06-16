@@ -11,12 +11,24 @@ monitoring stack (see `ops/`). See `docs/hardware.md`.
 
 ## Status
 
-Milestone **M7** (packaging). Native autostart on login via launchd, a complete CLI
-(`serve`, `models`, `bench`, `profile`, `validate`, `service`), boot-time config
-validation, and an optional external monitoring stack in `ops/`. Plus M6 (vision), M5
-(RAG: embeddings, vector store, two-stage retrieval, grounded citations), M4
-(observability + benchmarking), M3 (continuous batching + prefix KV-cache), M2 (model
-manager), and M1 (OpenAI-compatible gateway). See `docs/roadmap.md`.
+Milestone **M8** (web UI). A clean, chat-centric web app served at `/`: streaming chat with
+a model switcher, inline image attachments (vision) and document upload with a Grounded
+toggle for cited answers, and a side panel for model load/unload/pin, memory, and live
+throughput. Lean stack (React + Vite, no Tailwind/shadcn); the HTTP API is the durable
+contract. Plus M7 (packaging), M6 (vision), M5 (RAG), M4 (observability + benchmarking), M3
+(continuous batching + prefix KV-cache), M2 (model manager), M1 (gateway). See
+`docs/roadmap.md`.
+
+## Web UI
+
+```
+bash scripts/build-ui.sh        # build web/dist (Vite)
+uv run mlxd serve               # serves the UI at http://127.0.0.1:8000/
+```
+
+Chat with a model picker, attach an image (routed to the VLM), drag in a document and
+toggle **Grounded** for cited RAG answers, and manage models / watch live throughput in the
+side panel. For UI development: `npm --prefix web run dev` (proxies the API to the gateway).
 
 ## Observability
 
