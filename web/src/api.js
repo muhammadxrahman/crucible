@@ -27,6 +27,8 @@ export const unloadModel = (name) => postJSON("/admin/models/unload", { served_n
 export const pinModel = (name, pinned) =>
   postJSON("/admin/models/pin", { served_name: name, pinned }).then(jsonOrThrow);
 
+export const shutdownServer = () => postJSON("/admin/shutdown", {}).then(jsonOrThrow);
+
 export const ragQuery = (query) => postJSON("/rag/query", { query }).then(jsonOrThrow);
 export const ragDocuments = () => fetch("/rag/documents").then(jsonOrThrow).then((d) => d.documents);
 
@@ -36,12 +38,14 @@ export async function uploadDocs(files) {
   return jsonOrThrow(await fetch("/rag/upload", { method: "POST", body: form }));
 }
 
-// Stream a chat completion, calling onDelta(text) for each content chunk.
-export async function streamChat({ model, messages, signal, onDelta }) {
+// Stream a chat completion, calling onDelta(text) for each content chunk. No max_tokens is
+// sent, so the server runs until the model stops (unlimited by default). `thinking` toggles
+// reasoning models' <think> output.
+export async function streamChat({ model, messages, thinking = false, signal, onDelta }) {
   const res = await fetch("/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ model, messages, stream: true, max_tokens: 1024 }),
+    body: JSON.stringify({ model, messages, stream: true, enable_thinking: thinking }),
     signal,
   });
   if (!res.ok) {

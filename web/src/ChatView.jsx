@@ -6,6 +6,7 @@ const isImage = (f) => f.type.startsWith("image/");
 export default function ChatView({ models, hasVision, hasRag }) {
   const [model, setModel] = useState("");
   const [grounded, setGrounded] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [images, setImages] = useState([]); // {name, url}
@@ -60,6 +61,7 @@ export default function ChatView({ models, hasVision, hasRag }) {
       } else {
         await streamChat({
           model,
+          thinking,
           messages: openaiMessages(history),
           onDelta: (chunk) => setAssistant((a) => ({ ...a, text: a.text + chunk })),
         });
@@ -126,6 +128,10 @@ export default function ChatView({ models, hasVision, hasRag }) {
               </option>
             ))}
           </select>
+          <label className="toggle" title="Show the model's reasoning (<think>) — for reasoning models like Qwen3">
+            <input type="checkbox" checked={thinking} onChange={(e) => setThinking(e.target.checked)} />
+            Thinking
+          </label>
           {hasRag && (
             <label className="toggle" title="Answer from your uploaded documents with citations">
               <input type="checkbox" checked={grounded} onChange={(e) => setGrounded(e.target.checked)} />
@@ -181,16 +187,31 @@ export default function ChatView({ models, hasVision, hasRag }) {
   );
 }
 
+function splitThink(text) {
+  if (!text.includes("<think>")) return { think: null, answer: text };
+  const start = text.indexOf("<think>") + "<think>".length;
+  const end = text.indexOf("</think>");
+  if (end === -1) return { think: text.slice(start), answer: "", open: true }; // still thinking
+  return { think: text.slice(start, end).trim(), answer: text.slice(end + 8).trimStart() };
+}
+
 function Message({ m }) {
   if (m.role === "note") {
     return <div className="note">{m.text}</div>;
   }
+  const { think, answer, open } = m.role === "assistant" ? splitThink(m.text) : { answer: m.text };
   return (
     <div className={`msg ${m.role}`}>
       <div className="role">{m.role === "user" ? "you" : "assistant"}</div>
       <div className="bubble">
         {m.images?.map((u, i) => <img key={i} className="msg-img" src={u} alt="" />)}
-        <div className="text">{m.text}</div>
+        {think != null && (
+          <details className="think" open={open || !answer}>
+            <summary>💭 Reasoning</summary>
+            <div className="think-text">{think}</div>
+          </details>
+        )}
+        <div className="text">{answer}</div>
         {m.sources?.length > 0 && (
           <div className="sources">
             <div className="sources-title">Sources</div>

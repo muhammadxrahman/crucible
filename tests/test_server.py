@@ -166,6 +166,7 @@ def test_sampling_defaults_applied_when_omitted() -> None:
     assert engine.last_params.temperature == 0.7
     assert engine.last_params.top_p == 0.95
     assert engine.last_params.repetition_penalty == 1.1
+    assert engine.last_params.max_tokens == 0  # unlimited unless the client caps it
 
 
 def test_request_overrides_sampling_defaults() -> None:
@@ -181,6 +182,28 @@ def test_request_overrides_sampling_defaults() -> None:
     )
     assert engine.last_params.temperature == 0.0
     assert engine.last_params.repetition_penalty == 1.3
+
+
+def test_shutdown_endpoint_triggers_shutdown_and_responds() -> None:
+    # The injected callback avoids actually signalling the test process.
+    called = []
+    reg = Registry.model_validate(
+        {"models": [{"path": "f/p", "type": "lm", "served_name": "primary"}]}
+    )
+    runtime = RuntimeProfile(
+        name="pro64",
+        ceiling_bytes=10**12,
+        single_resident=False,
+        default_context=8192,
+        kv_bits=8,
+        vision=True,
+    )
+    manager = ModelManager(reg, runtime, lambda e: (FakeEngine(), 1))
+    c = TestClient(create_app(manager, runtime, on_shutdown=lambda: called.append(True)))
+    r = c.post("/admin/shutdown")
+    assert r.status_code == 200
+    assert r.json()["status"] == "shutting down"
+    assert called == [True]
 
 
 def test_thinking_disabled_by_default_and_overridable() -> None:

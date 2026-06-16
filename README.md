@@ -138,8 +138,15 @@ uv run mlxd serve                  # or: -c config/dev.yaml
 ```
 
 It stays in the foreground and opens the web app in your browser once it's ready (use
-`--no-open` to skip that). **Press `Ctrl-C` in that terminal to stop it.** That's the whole
-lifecycle — start, use, Ctrl-C.
+`--no-open` to skip that). To stop it, either:
+
+- **Press `Ctrl-C`** in that terminal, or
+- click **⏻ Shut down server** at the bottom of the web app's side panel (a graceful
+  shutdown, equivalent to Ctrl-C — handy when you don't have the terminal in front of you).
+  You can also `POST /admin/shutdown`.
+
+> Note: the shutdown button does not stop the **login service** (option 2) — its `KeepAlive`
+> restarts the server. Use `mlxd service uninstall` for that.
 
 **2. As a background login service (optional).** `mlxd service install` registers a `launchd`
 agent that starts the server on login **and automatically restarts it** if it exits. This is
@@ -174,6 +181,9 @@ Open `http://127.0.0.1:8000/` after starting the server.
 - **Attach a document** (📎, `.pdf`/`.txt`/`.md`) — it's indexed into the local knowledge
   base. Turn on **Grounded** and your question is answered from your documents with
   clickable `[1] [2]` citations.
+- **Thinking** toggle — for reasoning models (Qwen3), turn it on to see the model's
+  step-by-step reasoning in a collapsible "💭 Reasoning" block. Off by default (direct
+  answers). Generation is unlimited by default, so reasoning isn't cut off.
 - **Side panel** — load/unload/pin models, see the active hardware profile and a memory bar,
   and watch live prefill/decode throughput and time-to-first-token.
 

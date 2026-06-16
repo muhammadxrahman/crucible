@@ -8,6 +8,7 @@ export default function App() {
   const [hw, setHw] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [error, setError] = useState(null);
+  const [stopped, setStopped] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -28,10 +29,27 @@ export default function App() {
   const hasVision = models.some((m) => m.type === "vlm");
   const hasRag = models.some((m) => m.type === "embedding");
 
+  if (stopped) {
+    return (
+      <div className="stopped-overlay">
+        <div>
+          <h1>Crucible server stopped</h1>
+          <p>You can close this tab. Restart with `uv run mlxd serve` in your terminal.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       {!collapsed && (
-        <SidePanel models={models} hw={hw} onRefresh={refresh} onCollapse={() => setCollapsed(true)} />
+        <SidePanel
+          models={models}
+          hw={hw}
+          onRefresh={refresh}
+          onCollapse={() => setCollapsed(true)}
+          onShutdown={() => setStopped(true)}
+        />
       )}
       <main className="main">
         <header className="topbar">

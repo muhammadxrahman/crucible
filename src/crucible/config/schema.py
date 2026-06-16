@@ -39,7 +39,7 @@ class Sampling(_Strict):
     repetition_context_size: int = Field(default=20, gt=0)
     loop_guard: bool = True  # hard-stop runaway repetition loops
     enable_thinking: bool = False  # off -> reasoning models answer directly (no <think>)
-    max_tokens: int = Field(default=512, gt=0)
+    max_tokens: int = Field(default=0, ge=0)  # 0 = unlimited (run until the model stops)
 
 
 class ServerConfig(_Strict):
@@ -69,9 +69,9 @@ class RagConfig(_Strict):
     chunk_overlap: int = Field(default=40, ge=0)  # words of overlap
     store_dir: str = ".crucible/rag"
     max_context_chars: int = Field(default=6000, gt=0)
-    # Token budget for the grounded answer. Reasoning models (Qwen3 emits <think> blocks)
-    # need headroom so the answer isn't cut off; raise this if answers truncate.
-    answer_max_tokens: int = Field(default=1024, gt=0)
+    # Token budget for the grounded answer. 0 = unlimited (run until the model stops); set a
+    # positive value to cap it.
+    answer_max_tokens: int = Field(default=0, ge=0)
 
 
 class Registry(_Strict):

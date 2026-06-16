@@ -45,6 +45,13 @@ button { font: inherit; cursor: pointer; }
 .stat span:last-child { color: var(--accent); }
 .side-link { color: var(--muted); font-size: 12px; text-decoration: none; margin-top: auto; }
 .side-link:hover { color: var(--accent); }
+.shutdown { background: transparent; color: #c9576b; border: 1px solid #3a1f28;
+  border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+.shutdown:hover { background: #2a1820; color: #ff6b81; }
+.stopped-overlay { height: 100%; display: flex; align-items: center; justify-content: center;
+  text-align: center; color: var(--muted); }
+.stopped-overlay h1 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+.stopped-overlay code, .stopped-overlay p { font-size: 13px; }
 
 /* main + chat */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -62,6 +69,9 @@ button { font: inherit; cursor: pointer; }
 .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
 .msg.user .bubble { background: #15233b; }
 .text { white-space: pre-wrap; word-wrap: break-word; }
+.think { margin-bottom: 8px; border-left: 2px solid var(--line); padding-left: 8px; }
+.think summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.think-text { color: var(--muted); font-size: 12px; white-space: pre-wrap; margin-top: 4px; }
 .msg-img { max-width: 200px; max-height: 200px; border-radius: 8px; margin-bottom: 8px; display: block; }
 .sources { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
 .sources-title { font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }

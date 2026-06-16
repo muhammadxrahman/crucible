@@ -13,7 +13,7 @@ from mlx_lm import load, stream_generate
 from mlx_lm.models.cache import can_trim_prompt_cache, make_prompt_cache, trim_prompt_cache
 from mlx_lm.sample_utils import make_logits_processors, make_sampler
 
-from .base import Delta, Final, GenEvent, SamplingParams
+from .base import Delta, Final, GenEvent, SamplingParams, resolve_max_tokens
 from .loopguard import LoopGuard
 
 
@@ -77,7 +77,7 @@ class MLXTextEngine:
             self._model,
             self._tokenizer,
             feed,
-            max_tokens=params.max_tokens,
+            max_tokens=resolve_max_tokens(params.max_tokens),
             sampler=sampler,
             **kwargs,
         ):

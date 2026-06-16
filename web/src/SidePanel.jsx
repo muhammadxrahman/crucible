@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { loadModel, metricsSummary, pinModel, unloadModel } from "./api.js";
+import { loadModel, metricsSummary, pinModel, shutdownServer, unloadModel } from "./api.js";
 
-export default function SidePanel({ models, hw, onRefresh, onCollapse }) {
+export default function SidePanel({ models, hw, onRefresh, onCollapse, onShutdown }) {
   const [metrics, setMetrics] = useState(null);
   const [acting, setActing] = useState("");
 
@@ -109,6 +109,22 @@ export default function SidePanel({ models, hw, onRefresh, onCollapse }) {
       <a className="side-link" href="/observability" target="_blank" rel="noreferrer">
         full dashboard →
       </a>
+
+      <button
+        className="shutdown"
+        title="Gracefully stop the server"
+        onClick={async () => {
+          if (!confirm("Shut down the Crucible server?")) return;
+          try {
+            await shutdownServer();
+          } catch {
+            // the server may drop the connection as it stops — treat as success
+          }
+          onShutdown?.();
+        }}
+      >
+        ⏻ Shut down server
+      </button>
     </aside>
   );
 }

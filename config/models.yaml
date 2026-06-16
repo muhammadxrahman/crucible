@@ -20,8 +20,8 @@ server:
     top_p: 0.95
     repetition_penalty: 1.1
     repetition_context_size: 20
-    enable_thinking: false
-    max_tokens: 512
+    enable_thinking: false   # default; the web UI has a per-chat Thinking toggle
+    max_tokens: 0            # 0 = unlimited (run until the model stops); it's local
 
 models:
   - path: mlx-community/Qwen3-30B-A3B-4bit

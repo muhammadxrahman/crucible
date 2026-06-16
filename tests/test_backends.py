@@ -47,8 +47,16 @@ def test_apply_stop_emits_prefix_before_stop() -> None:
 
 def test_sampling_params_defaults() -> None:
     p = SamplingParams()
-    assert p.max_tokens == 512
+    assert p.max_tokens == 0  # unlimited by default
     assert p.stop == []
+
+
+def test_resolve_max_tokens_unlimited() -> None:
+    from crucible.backends.base import UNLIMITED_MAX_TOKENS, resolve_max_tokens
+
+    assert resolve_max_tokens(0) == UNLIMITED_MAX_TOKENS  # 0 -> unlimited
+    assert resolve_max_tokens(-5) == UNLIMITED_MAX_TOKENS
+    assert resolve_max_tokens(256) == 256  # a positive cap is honored
 
 
 def test_fake_engine_satisfies_protocol() -> None:

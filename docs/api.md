@@ -5,7 +5,7 @@ The gateway exposes an OpenAI-compatible surface, an Anthropic messages surface,
 ## OpenAI-compatible endpoints
 
 ### POST /v1/chat/completions
-Chat with a text or vision model. Honors `model`, `messages`, `stream`, `temperature`, `top_p`, `repetition_penalty`, `enable_thinking`, `max_tokens`, `stop`, and tool-calling fields. Any omitted sampling field falls back to the server `sampling` defaults (chat-sane, with a repetition penalty so generation does not collapse into loops). `enable_thinking` is off by default, so reasoning models (Qwen3) answer directly rather than emitting a `<think>` block; set it true per request to opt into reasoning. Streaming uses SSE with `data:` chunks terminated by `data: [DONE]`. Vision input uses the standard content-parts shape with `image_url` items (HTTP URLs and base64 data URLs both accepted).
+Chat with a text or vision model. Honors `model`, `messages`, `stream`, `temperature`, `top_p`, `repetition_penalty`, `enable_thinking`, `max_tokens`, `stop`, and tool-calling fields. Any omitted sampling field falls back to the server `sampling` defaults (chat-sane, with a repetition penalty so generation does not collapse into loops). `enable_thinking` is off by default, so reasoning models (Qwen3) answer directly rather than emitting a `<think>` block; set it true per request to opt into reasoning. `max_tokens` defaults to unlimited (the server `sampling.max_tokens` is `0`, meaning run until the model stops); send a positive `max_tokens` to cap the output. Streaming uses SSE with `data:` chunks terminated by `data: [DONE]`. Vision input uses the standard content-parts shape with `image_url` items (HTTP URLs and base64 data URLs both accepted).
 
 ### POST /v1/completions
 Legacy text completion for a single prompt. Same sampling fields, same streaming behavior.
@@ -44,6 +44,9 @@ These back the web UI's model and RAG views. They are part of the public API and
 
 ### POST /admin/models/load, POST /admin/models/unload, POST /admin/models/pin
 Load, unload, or pin a model by `served_name`. Subject to the active profile's memory ceiling and residency rules.
+
+### POST /admin/shutdown
+Gracefully stops the server (the same clean shutdown as Ctrl-C), an alternative for clients without terminal access such as the web UI's shutdown button. Localhost-only. Has no effect against the optional login service, which restarts on exit.
 
 ### POST /rag/ingest
 Ingests files or a directory by server-side path: load, chunk, embed, upsert into the vector store. Returns indexed document identifiers.

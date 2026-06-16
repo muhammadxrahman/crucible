@@ -17,7 +17,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
-from crucible.backends.base import Delta, Final, SamplingParams
+from crucible.backends.base import Delta, Final, SamplingParams, resolve_max_tokens
 from crucible.backends.loopguard import LoopGuard
 from crucible.backends.text import _apply_stop, _logits_processors
 
@@ -200,7 +200,7 @@ class BatchScheduler:
 
     def _admit(self, reqs: list[_Req]) -> None:
         prompts = [r.tokens for r in reqs]
-        max_tokens = [r.params.max_tokens for r in reqs]
+        max_tokens = [resolve_max_tokens(r.params.max_tokens) for r in reqs]
         samplers = [r.sampler for r in reqs]
         logits = [r.logits or [] for r in reqs]
         uids = self._backend.insert(

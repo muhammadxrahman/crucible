@@ -8,6 +8,9 @@ runs blocking MLX work in a threadpool. Batching and the Anthropic surface come 
 from __future__ import annotations
 
 import json
+import os
+import signal
+import threading
 import time
 from collections.abc import Iterator
 from functools import lru_cache
@@ -66,6 +69,17 @@ class AdminModelRequest(BaseModel):
     pinned: bool = True
 
 
+def _default_shutdown() -> None:
+    """Gracefully stop the server: SIGTERM to ourselves (what Ctrl-C does), after a short
+    delay so the HTTP response is flushed first. uvicorn handles the signal cleanly."""
+
+    def _stop() -> None:
+        time.sleep(0.4)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=_stop, daemon=True).start()
+
+
 def create_app(
     manager: ModelManager,
     runtime: RuntimeProfile,
@@ -73,6 +87,7 @@ def create_app(
     *,
     web_dist: str = "web/dist",
     sampling: Sampling | None = None,
+    on_shutdown=None,
 ) -> FastAPI:
     app = FastAPI(title="Crucible", version="0.0.0")
     metrics = Metrics()
@@ -169,6 +184,12 @@ def create_app(
     @app.post("/admin/models/pin")
     def admin_pin(req: AdminModelRequest):
         return _admin(lambda: manager.pin(req.served_name, req.pinned))
+
+    @app.post("/admin/shutdown")
+    def admin_shutdown() -> dict:
+        """Gracefully stop the server (an alternative to Ctrl-C). Localhost-only."""
+        (on_shutdown or _default_shutdown)()
+        return {"status": "shutting down"}
 
     @app.post("/v1/embeddings")
     def embeddings(req: EmbeddingsRequest):

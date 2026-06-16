@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from crucible.manager.memory import MlxMemory
 
-from .base import Delta, Final, GenEvent, SamplingParams
+from .base import Delta, Final, GenEvent, SamplingParams, resolve_max_tokens
 from .images import ImageRef, materialize, text_messages
 from .loopguard import LoopGuard
 from .text import _apply_stop
@@ -91,7 +91,7 @@ class MLXVLMEngine:
                 self._proc,
                 prompt,
                 image=image_arg,
-                max_tokens=params.max_tokens,
+                max_tokens=resolve_max_tokens(params.max_tokens),
                 temperature=params.temperature,
                 top_p=params.top_p,
                 repetition_penalty=penalty,

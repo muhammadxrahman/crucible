@@ -10,10 +10,20 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
+# An effectively-unlimited cap. Both engine paths stop at EOS long before this; the loop
+# guard catches degenerate repetition. (mlx-lm's -1 sentinel is not honored by the batched
+# BatchGenerator, which compares generated >= max_tokens, so a large number is used instead.)
+UNLIMITED_MAX_TOKENS = 1_000_000
+
+
+def resolve_max_tokens(max_tokens: int) -> int:
+    """<= 0 means unlimited (generate until the model stops)."""
+    return max_tokens if max_tokens > 0 else UNLIMITED_MAX_TOKENS
+
 
 @dataclass
 class SamplingParams:
-    max_tokens: int = 512
+    max_tokens: int = 0  # 0 = unlimited (run until EOS); a positive value caps it
     temperature: float = 0.7
     top_p: float = 0.95
     # A repetition penalty > 1 is what stops weak/quantized models collapsing into verbatim
