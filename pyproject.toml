@@ -52,4 +52,8 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# The default gate stays GPU-free and fast: real-model stress tests are opt-in via `-m real`.
+addopts = "-q -m 'not real'"
+markers = [
+    "real: hits real MLX models on Apple Silicon (slow, heavy RAM); excluded from the default run",
+]
