@@ -17,7 +17,7 @@ Returns dense vectors for `input` (a string or array of strings), served by an `
 Reorders `documents` by relevance to `query`, served by a `rerank` model (cross-encoder). Returns documents with scores, sorted descending.
 
 ### GET /v1/models
-Lists models. Each entry reports its `served_name`, `type`, residency state (resident or available), `pin` state, and approximate resident memory. Clients and the UI use this to discover capabilities.
+Lists models. Each entry reports its `id` (served_name), `type`, the underlying model `path` (the Hugging Face repo it serves, so the UI shows the real model rather than only the served_name), residency `state` (`resident`, `loading`, or `available`), `pin` state, approximate resident memory, and an `error` string if the last load failed. Clients and the UI use this to discover capabilities.
 
 ## Anthropic-compatible endpoint
 
@@ -43,7 +43,13 @@ Liveness and readiness. Reports server status, the active hardware profile, and 
 These back the web UI's model and RAG views. They are part of the public API and hold no special privilege beyond ordinary authorization.
 
 ### POST /admin/models/load, POST /admin/models/unload, POST /admin/models/pin
-Load, unload, or pin a model by `served_name`. Subject to the active profile's memory ceiling and residency rules.
+Load, unload, or pin a model by `served_name`. Subject to the active profile's memory ceiling and residency rules. Loads run with the manager lock released, so concurrent calls (and `/v1/models` polling) stay responsive while a large model loads.
+
+### GET /admin/models/available
+Lists MLX models already present in the local Hugging Face cache (no download): each item reports `repo_id`, `size_bytes`, `size_str`, a best-effort `guessed_type`, and whether it is already `registered`. Backs the web UI's "add model" picker.
+
+### POST /admin/models/add
+Registers a downloaded model at runtime (`path`, `type`, `served_name`, optional `pin`), appends it to the active config file so it survives a restart (comments preserved), and starts loading it in the background. Returns immediately with `state: "loading"`; poll `/v1/models` until it becomes `resident`. A duplicate `served_name` returns a `409` `served_name_conflict`; an invalid entry returns `400`.
 
 ### POST /admin/shutdown
 Gracefully stops the server (the same clean shutdown as Ctrl-C), an alternative for clients without terminal access such as the web UI's shutdown button. Localhost-only. Has no effect against the optional login service, which restarts on exit.

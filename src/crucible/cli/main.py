@@ -121,7 +121,9 @@ def serve(
             f"rerank={roles['rerank_name'] or 'off'}",
             fg=typer.colors.CYAN,
         )
-    application = create_app(manager, runtime, rag, sampling=reg.server.sampling)
+    application = create_app(
+        manager, runtime, rag, sampling=reg.server.sampling, config_path=config
+    )
     ui_host = "127.0.0.1" if bind_host in ("0.0.0.0", "") else bind_host
     url = f"http://{ui_host}:{bind_port}/"
     typer.secho(

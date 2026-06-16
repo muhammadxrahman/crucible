@@ -207,3 +207,117 @@ def test_list_status_reports_residency_and_pin() -> None:
     assert by_name["a"].state == "available"  # pinned but not yet warmed
     assert by_name["b"].state == "resident"
     assert by_name["b"].resident_bytes == 100
+
+
+def test_status_reports_model_path() -> None:
+    loader, _ = make_loader({"a": 100})
+    m = ModelManager(registry([lm("a")]), runtime(10_000), loader)
+    assert m.status("a").path == "fake/a"  # the real model, not just the served_name
+
+
+def test_register_adds_a_runtime_model() -> None:
+    loader, _ = make_loader({"a": 100, "b": 100})
+    m = ModelManager(registry([lm("a")]), runtime(10_000), loader)
+    from crucible.config import ModelEntry
+
+    m.register(ModelEntry(path="fake/b", type="lm", served_name="b"))
+    assert {s.served_name for s in m.list_status()} == {"a", "b"}
+    m.acquire("b")  # the new model is loadable through the normal path
+    assert m.is_resident("b")
+
+    with pytest.raises(ValueError):  # served_name collision is rejected
+        m.register(ModelEntry(path="fake/a2", type="lm", served_name="a"))
+
+
+def _gated_loader():
+    """A loader that blocks inside the load until released, so a concurrent thread can observe
+    the manager while a load is in flight (proving the global lock is not held during load)."""
+    import threading
+
+    gate = threading.Event()
+    started = threading.Event()
+    calls: list[str] = []
+
+    def load(entry):  # noqa: ANN001
+        calls.append(entry.served_name)
+        started.set()
+        gate.wait(timeout=5)
+        return FakeEngine(entry.served_name), 100
+
+    return load, gate, started, calls
+
+
+def test_lock_released_during_load() -> None:
+    import threading
+
+    load, gate, started, _ = _gated_loader()
+    m = ModelManager(registry([lm("a"), lm("b")]), runtime(10_000), load)
+
+    t = threading.Thread(target=lambda: m.acquire("a"))
+    t.start()
+    assert started.wait(timeout=5)  # loader is now blocked mid-load
+
+    # The manager stays responsive while "a" loads: status is queryable and reports "loading".
+    by_name = {s.served_name: s for s in m.list_status()}
+    assert by_name["a"].state == "loading"
+    assert by_name["b"].state == "available"
+
+    gate.set()
+    t.join(timeout=5)
+    assert m.is_resident("a")
+
+
+def test_concurrent_acquire_loads_once() -> None:
+    import threading
+
+    load, gate, started, calls = _gated_loader()
+    m = ModelManager(registry([lm("a")]), runtime(10_000), load)
+
+    threads = [threading.Thread(target=lambda: m.acquire("a")) for _ in range(4)]
+    for t in threads:
+        t.start()
+    assert started.wait(timeout=5)
+    gate.set()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert calls == ["a"]  # exactly one load despite four concurrent acquirers
+    assert m.is_resident("a")
+
+
+def test_failed_load_records_error_and_allows_retry() -> None:
+    attempts = {"n": 0}
+
+    def loader(entry):  # noqa: ANN001
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("boom")
+        return FakeEngine(entry.served_name), 100
+
+    m = ModelManager(registry([lm("a")]), runtime(10_000), loader)
+
+    with pytest.raises(RuntimeError):
+        m.acquire("a")
+    s = m.status("a")
+    assert s.state == "available" and "boom" in (s.error or "")  # error surfaced, not stuck loading
+
+    m.acquire("a")  # a fresh acquire retries and succeeds
+    assert m.is_resident("a")
+    assert m.status("a").error is None
+
+
+def test_load_async_returns_loading_then_resident() -> None:
+    import threading
+
+    load, gate, started, _ = _gated_loader()
+    m = ModelManager(registry([lm("a")]), runtime(10_000), load)
+
+    s = m.load_async("a")
+    assert s.state == "loading"  # returns immediately, load runs in the background
+    assert started.wait(timeout=5)
+    gate.set()
+    for _ in range(50):
+        if m.is_resident("a"):
+            break
+        threading.Event().wait(0.02)
+    assert m.is_resident("a")

@@ -184,8 +184,13 @@ Open `http://127.0.0.1:8000/` after starting the server.
 - **Thinking** toggle — for reasoning models (Qwen3), turn it on to see the model's
   step-by-step reasoning in a collapsible "💭 Reasoning" block. Off by default (direct
   answers). Generation is unlimited by default, so reasoning isn't cut off.
-- **Side panel** — load/unload/pin models, see the active hardware profile and a memory bar,
-  and watch live prefill/decode throughput and time-to-first-token.
+- **Side panel** — each model shows its real name (the model `path`, not just `primary`).
+  Load/unload/pin models, see the active hardware profile and a memory bar, and watch live
+  prefill/decode throughput and time-to-first-token.
+- **Add a downloaded model** (＋ in the side panel) — pick any MLX model already in your local
+  Hugging Face cache, choose its type, name it, and load it without editing config. It loads in
+  the background (the panel stays responsive) and is saved to `config/models.yaml`, so it's
+  there after a restart.
 
 Capability-aware: if your config has no vision or embedding model, the UI hides the
 corresponding controls automatically.

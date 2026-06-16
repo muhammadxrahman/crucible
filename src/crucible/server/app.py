@@ -69,6 +69,13 @@ class AdminModelRequest(BaseModel):
     pinned: bool = True
 
 
+class AddModelRequest(BaseModel):
+    path: str  # Hugging Face repo id (already in the local cache)
+    type: str = "lm"
+    served_name: str
+    pin: bool = False
+
+
 def _default_shutdown() -> None:
     """Gracefully stop the server: SIGTERM to ourselves (what Ctrl-C does), after a short
     delay so the HTTP response is flushed first. uvicorn handles the signal cleanly."""
@@ -88,6 +95,7 @@ def create_app(
     web_dist: str = "web/dist",
     sampling: Sampling | None = None,
     on_shutdown=None,
+    config_path: str | Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Crucible", version="0.0.0")
     metrics = Metrics()
@@ -184,6 +192,20 @@ def create_app(
     @app.post("/admin/models/pin")
     def admin_pin(req: AdminModelRequest):
         return _admin(lambda: manager.pin(req.served_name, req.pinned))
+
+    @app.get("/admin/models/available")
+    def admin_available() -> dict:
+        """Downloaded MLX models in the local HF cache, for the UI's 'add model' picker."""
+        from crucible.manager.catalog import available_models
+
+        registered = {s.path for s in manager.list_status()}
+        return {"data": available_models(registered)}
+
+    @app.post("/admin/models/add")
+    def admin_add(req: AddModelRequest):
+        """Register a downloaded model at runtime, persist it to config, and start loading it.
+        Returns immediately with state 'loading'; the UI polls /v1/models until 'resident'."""
+        return _admin_add(manager, req, config_path)
 
     @app.post("/admin/shutdown")
     def admin_shutdown() -> dict:
@@ -324,9 +346,11 @@ def _model_view(s: ModelStatus) -> dict:
         "object": "model",
         "owned_by": "crucible",
         "type": s.type,
+        "path": s.path,
         "state": s.state,
         "pinned": s.pinned,
         "resident_mb": round(s.resident_bytes / _MB, 1),
+        "error": s.error,
     }
 
 
@@ -364,10 +388,34 @@ def _status_view(s: ModelStatus) -> dict:
     return {
         "served_name": s.served_name,
         "type": s.type,
+        "path": s.path,
         "state": s.state,
         "pinned": s.pinned,
         "resident_mb": round(s.resident_bytes / _MB, 1),
+        "error": s.error,
     }
+
+
+def _admin_add(manager: ModelManager, req: AddModelRequest, config_path) -> JSONResponse:
+    from pydantic import ValidationError
+
+    from crucible.config import ModelEntry
+    from crucible.config.store import append_model
+
+    try:
+        entry = ModelEntry(path=req.path, type=req.type, served_name=req.served_name, pin=req.pin)
+    except ValidationError as e:
+        return JSONResponse(status_code=400, content=payloads.error(str(e), "invalid_model_entry"))
+    try:
+        manager.register(entry)
+    except ValueError as e:
+        return JSONResponse(status_code=409, content=payloads.error(str(e), "served_name_conflict"))
+    if config_path is not None:
+        try:
+            append_model(config_path, entry)
+        except Exception:  # noqa: BLE001 - persistence is best-effort; the model still serves now
+            pass
+    return JSONResponse(_status_view(manager.load_async(req.served_name)))
 
 
 def _sse(events: Iterator[dict]) -> Iterator[str]:

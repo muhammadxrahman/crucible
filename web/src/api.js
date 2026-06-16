@@ -29,6 +29,12 @@ export const pinModel = (name, pinned) =>
 
 export const shutdownServer = () => postJSON("/admin/shutdown", {}).then(jsonOrThrow);
 
+// Downloaded MLX models in the local HF cache, for the "add model" picker.
+export const availableModels = () =>
+  fetch("/admin/models/available").then(jsonOrThrow).then((d) => d.data);
+export const addModel = ({ path, type, served_name, pin = false }) =>
+  postJSON("/admin/models/add", { path, type, served_name, pin }).then(jsonOrThrow);
+
 export const ragQuery = (query) => postJSON("/rag/query", { query }).then(jsonOrThrow);
 export const ragDocuments = () => fetch("/rag/documents").then(jsonOrThrow).then((d) => d.documents);
 

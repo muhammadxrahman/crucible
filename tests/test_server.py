@@ -8,6 +8,7 @@ scripts/smoke_server.py.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterator
 
 import pytest
@@ -340,6 +341,97 @@ def test_observability_serves_dashboard_html() -> None:
     r = c.get("/observability")
     assert r.status_code == 200
     assert "<title>Crucible" in r.text
+
+
+def test_list_models_reports_real_path() -> None:
+    c, _ = make_client()
+    data = c.get("/v1/models").json()["data"]
+    assert data[0]["id"] == "primary"
+    assert data[0]["path"] == "fake/tiny"  # the underlying model, not just the served_name
+
+
+def test_available_models_endpoint(monkeypatch) -> None:
+    from crucible.manager import catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "available_models",
+        lambda registered: [
+            {
+                "repo_id": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+                "size_bytes": 1_800_000_000,
+                "size_str": "1.8G",
+                "guessed_type": "lm",
+                "registered": False,
+            }
+        ],
+    )
+    c, _ = make_client()
+    data = c.get("/admin/models/available").json()["data"]
+    assert data[0]["repo_id"] == "mlx-community/Llama-3.2-3B-Instruct-4bit"
+    assert data[0]["guessed_type"] == "lm"
+
+
+def _add_client(tmp_path):
+    """A client whose loader serves any lm entry and whose adds persist to a temp config."""
+    cfg = tmp_path / "models.yaml"
+    cfg.write_text("models:\n  - {path: fake/tiny, type: lm, served_name: primary}\n")
+    from crucible.config import load_registry
+
+    reg = load_registry(cfg)
+    runtime = RuntimeProfile(
+        name="pro64",
+        ceiling_bytes=10**12,
+        single_resident=False,
+        default_context=32768,
+        kv_bits=8,
+        vision=True,
+    )
+    manager = ModelManager(reg, runtime, lambda entry: (FakeEngine([entry.served_name]), 1000))
+    return TestClient(create_app(manager, runtime, config_path=cfg)), cfg, manager
+
+
+def test_add_model_registers_persists_and_loads(tmp_path) -> None:
+    c, cfg, manager = _add_client(tmp_path)
+
+    r = c.post(
+        "/admin/models/add",
+        json={"path": "mlx-community/Llama-3.2-3B-4bit", "type": "lm", "served_name": "llama3"},
+    )
+    assert r.status_code == 200
+    assert r.json()["state"] in ("loading", "resident")  # load kicked off in the background
+
+    # The model is registered and persisted to the config file.
+    ids = {m["id"] for m in c.get("/v1/models").json()["data"]}
+    assert "llama3" in ids
+    assert "served_name: llama3" in cfg.read_text()
+
+    # And it becomes usable once the background load settles.
+    for _ in range(100):
+        if manager.is_resident("llama3"):
+            break
+        time.sleep(0.02)
+    assert manager.is_resident("llama3")
+
+
+def test_add_model_duplicate_served_name_conflicts(tmp_path) -> None:
+    c, _, _ = _add_client(tmp_path)
+    r = c.post(
+        "/admin/models/add",
+        json={"path": "fake/other", "type": "lm", "served_name": "primary"},
+    )
+    assert r.status_code == 409
+    assert r.json()["error"]["type"] == "served_name_conflict"
+
+
+def test_add_model_invalid_type_rejected(tmp_path) -> None:
+    c, _, _ = _add_client(tmp_path)
+    r = c.post(
+        "/admin/models/add",
+        json={"path": "fake/x", "type": "diffusion", "served_name": "x"},
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["type"] == "invalid_model_entry"
 
 
 def test_image_request_without_vision_model_is_rejected() -> None:

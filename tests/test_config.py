@@ -74,3 +74,42 @@ def test_undefined_active_profile_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigError, match="not defined in profiles"):
         load_registry(bad)
+
+
+def test_append_model_persists_and_preserves_comments(tmp_path: Path) -> None:
+    from crucible.config import ModelEntry
+    from crucible.config.store import append_model
+
+    cfg = tmp_path / "models.yaml"
+    cfg.write_text(
+        "# my registry — keep this comment\n"
+        "server:\n"
+        "  port: 8000  # inline note\n"
+        "models:\n"
+        "  - {path: mlx-community/Existing-4bit, type: lm, served_name: primary}\n"
+    )
+    append_model(
+        cfg, ModelEntry(path="mlx-community/Llama-3.2-3B-4bit", type="lm", served_name="llama3")
+    )
+
+    text = cfg.read_text()
+    assert "# my registry — keep this comment" in text  # comments survive the round-trip
+    assert "# inline note" in text
+
+    reg = load_registry(cfg)  # the new entry loads back as a valid registry
+    by_name = {m.served_name: m for m in reg.models}
+    assert by_name["primary"].path == "mlx-community/Existing-4bit"
+    assert by_name["llama3"].path == "mlx-community/Llama-3.2-3B-4bit"
+
+
+def test_append_model_creates_models_list_when_absent(tmp_path: Path) -> None:
+    from crucible.config import ModelEntry
+    from crucible.config.store import append_model
+
+    cfg = tmp_path / "models.yaml"
+    cfg.write_text("server:\n  port: 8000\n")
+    append_model(cfg, ModelEntry(path="m/x", type="embedding", served_name="e", pin=True))
+
+    reg = load_registry(cfg)
+    assert reg.models[0].served_name == "e"
+    assert reg.models[0].pin is True
