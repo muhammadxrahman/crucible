@@ -35,6 +35,7 @@ from crucible.observability import CONTENT_TYPE, Metrics
 
 from . import payloads
 from .schemas import (
+    AnthropicMessagesRequest,
     ChatCompletionRequest,
     CompletionRequest,
     EmbeddingsRequest,
@@ -76,6 +77,20 @@ class AddModelRequest(BaseModel):
     pin: bool = False
 
 
+class SessionCreate(BaseModel):
+    title: str | None = None
+    model: str | None = None
+
+
+class SessionRename(BaseModel):
+    title: str
+
+
+class MessageCreate(BaseModel):
+    role: str
+    content: str
+
+
 def _default_shutdown() -> None:
     """Gracefully stop the server: SIGTERM to ourselves (what Ctrl-C does), after a short
     delay so the HTTP response is flushed first. uvicorn handles the signal cleanly."""
@@ -96,6 +111,7 @@ def create_app(
     sampling: Sampling | None = None,
     on_shutdown=None,
     config_path: str | Path | None = None,
+    history=None,
 ) -> FastAPI:
     app = FastAPI(title="Crucible", version="0.0.0")
     metrics = Metrics()
@@ -165,6 +181,22 @@ def create_app(
                 media_type="text/event-stream",
             )
         return JSONResponse(payloads.chat_full(events, req.model))
+
+    @app.post("/v1/messages")
+    def anthropic_messages(req: AnthropicMessagesRequest):
+        """Anthropic Messages API mapped onto the text backends (text content; image blocks
+        ignored). Lets the Anthropic SDK work by changing only the base URL."""
+        engine, miss = _resolve(manager, req.model)
+        if miss:
+            return miss
+        params = req.sampling(sampling_defaults)
+        events = _observe(engine.stream(req.rendered_messages(), params), metrics, req.model)
+        if req.stream:
+            return StreamingResponse(
+                _anthropic_sse(payloads.messages_stream(events, req.model)),
+                media_type="text/event-stream",
+            )
+        return JSONResponse(payloads.messages_full(events, req.model))
 
     @app.post("/v1/completions")
     def completions(req: CompletionRequest):
@@ -287,6 +319,53 @@ def create_app(
             paths.append(str(dest))
         return JSONResponse(rag.ingest(paths))
 
+    @app.get("/sessions")
+    def list_sessions():
+        if history is None:
+            return _history_disabled()
+        return {"sessions": history.list_sessions()}
+
+    @app.post("/sessions")
+    def create_session(req: SessionCreate):
+        if history is None:
+            return _history_disabled()
+        return JSONResponse(history.create_session(title=req.title or "New chat", model=req.model))
+
+    @app.get("/sessions/{sid}")
+    def get_session(sid: str):
+        if history is None:
+            return _history_disabled()
+        s = history.get_session(sid)
+        if s is None:
+            return _session_not_found(sid)
+        return JSONResponse(s)
+
+    @app.post("/sessions/{sid}/messages")
+    def add_message(sid: str, req: MessageCreate):
+        if history is None:
+            return _history_disabled()
+        if not history.append_message(sid, req.role, req.content):
+            return _session_not_found(sid)
+        return {"ok": True}
+
+    @app.patch("/sessions/{sid}")
+    def rename_session(sid: str, req: SessionRename):
+        if history is None:
+            return _history_disabled()
+        if not history.rename(sid, req.title):
+            return _session_not_found(sid)
+        return {"ok": True}
+
+    @app.delete("/sessions/{sid}")
+    def delete_session(sid: str):
+        if history is None:
+            return _history_disabled()
+        if not history.delete(sid):
+            return _session_not_found(sid)
+        return {"ok": True}
+
+    app.state.history = history
+
     # Serve the built web UI at / when present. Mounted last so API routes win.
     if Path(web_dist).is_dir():
         app.mount("/", StaticFiles(directory=web_dist, html=True), name="web")
@@ -337,6 +416,20 @@ def _rag_disabled() -> JSONResponse:
         content=payloads.error(
             "RAG is not configured (no embedding model in the registry)", "rag_unavailable"
         ),
+    )
+
+
+def _history_disabled() -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content=payloads.error("chat history is not enabled on this server", "history_unavailable"),
+    )
+
+
+def _session_not_found(sid: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content=payloads.error(f"session '{sid}' not found", "session_not_found"),
     )
 
 
@@ -422,6 +515,12 @@ def _sse(events: Iterator[dict]) -> Iterator[str]:
     for event in events:
         yield f"data: {json.dumps(event)}\n\n"
     yield "data: [DONE]\n\n"
+
+
+def _anthropic_sse(events: Iterator[dict]) -> Iterator[str]:
+    """Anthropic SSE: a named `event:` line per chunk, ended by `message_stop` (no [DONE])."""
+    for event in events:
+        yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
 
 
 __all__ = ["create_app"]

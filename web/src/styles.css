@@ -41,6 +41,19 @@ button { font: inherit; cursor: pointer; }
 .dot.loading { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .side-head-actions { display: flex; gap: 6px; }
+.chats { display: flex; flex-direction: column; gap: 2px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.new-chat { background: #1a2030; color: var(--text); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px; font-size: 12px; margin-bottom: 4px; text-align: left; }
+.new-chat:hover { border-color: var(--accent); }
+.chat-row { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 6px;
+  cursor: pointer; font-size: 12px; }
+.chat-row:hover { background: #1a2030; }
+.chat-row.active { background: #1a2030; border: 1px solid var(--line); }
+.chat-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-del { background: transparent; border: none; color: var(--muted); font-size: 14px; opacity: 0; }
+.chat-row:hover .chat-del { opacity: 1; }
+.chat-del:hover { color: #ff6b6b; }
+.send.stop { background: #b54747; }
 .add-panel { border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex;
   flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
 .add-panel.error, .add-err { color: #ff6b6b; font-size: 11px; }

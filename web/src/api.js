@@ -35,6 +35,20 @@ export const availableModels = () =>
 export const addModel = ({ path, type, served_name, pin = false }) =>
   postJSON("/admin/models/add", { path, type, served_name, pin }).then(jsonOrThrow);
 
+// Chat history (sessions). These no-op gracefully if the server has history disabled (503).
+export const listSessions = () => fetch("/sessions").then(jsonOrThrow).then((d) => d.sessions);
+export const createSession = (body) => postJSON("/sessions", body).then(jsonOrThrow);
+export const getSession = (id) => fetch(`/sessions/${id}`).then(jsonOrThrow);
+export const addMessage = (id, role, content) =>
+  postJSON(`/sessions/${id}/messages`, { role, content }).then(jsonOrThrow);
+export const renameSession = (id, title) =>
+  fetch(`/sessions/${id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  }).then(jsonOrThrow);
+export const deleteSession = (id) => fetch(`/sessions/${id}`, { method: "DELETE" }).then(jsonOrThrow);
+
 export const ragQuery = (query) => postJSON("/rag/query", { query }).then(jsonOrThrow);
 export const ragDocuments = () => fetch("/rag/documents").then(jsonOrThrow).then((d) => d.documents);
 

@@ -121,8 +121,19 @@ def serve(
             f"rerank={roles['rerank_name'] or 'off'}",
             fg=typer.colors.CYAN,
         )
+    import os
+
+    from crucible.history import HistoryStore
+
+    history_db = os.environ.get("CRUCIBLE_HISTORY_DB", str(Path(".crucible") / "history.db"))
+    history = HistoryStore(history_db)
     application = create_app(
-        manager, runtime, rag, sampling=reg.server.sampling, config_path=config
+        manager,
+        runtime,
+        rag,
+        sampling=reg.server.sampling,
+        config_path=config,
+        history=history,
     )
     ui_host = "127.0.0.1" if bind_host in ("0.0.0.0", "") else bind_host
     url = f"http://{ui_host}:{bind_port}/"

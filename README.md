@@ -45,8 +45,9 @@ RAG, vision, observability, and UI — built on top of `mlx-lm`, `mlx-vlm`, and
 - **Multiple models at once** — serve text, vision, embedding, and reranker models from one
   process. The model manager loads on demand, evicts least-recently-used models under a
   memory ceiling, and honors pins and idle timeouts.
-- **OpenAI drop-in** — point any OpenAI client (the `openai` Python/JS SDK, Cursor,
-  Continue.dev, etc.) at `http://127.0.0.1:8000/v1` by changing only the base URL.
+- **OpenAI and Anthropic drop-in** — point any OpenAI client (the `openai` SDK, Cursor,
+  Continue.dev, etc.) at `http://127.0.0.1:8000/v1` by changing only the base URL. The
+  Anthropic Messages API (`/v1/messages`, text) works the same way for Anthropic SDK clients.
 - **Built-in web app** — a clean, ChatGPT-style chat at `/` with a model switcher, image and
   document attachments, "Grounded" and "Thinking" toggles, and a side panel that shows each
   model's real name, loads any already-downloaded model on the fly, and tracks live throughput.
@@ -191,6 +192,9 @@ Open `http://127.0.0.1:8000/` after starting the server.
   Hugging Face cache, choose its type, name it, and load it without editing config. It loads in
   the background (the panel stays responsive) and is saved to `config/models.yaml`, so it's
   there after a restart.
+- **Saved chats** — conversations are stored locally (SQLite). The side panel lists past chats;
+  click one to resume it, **＋ New chat** to start fresh, or × to delete. While a reply streams,
+  the send button becomes a **stop** button that cancels generation and frees the GPU.
 
 Capability-aware: if your config has no vision or embedding model, the UI hides the
 corresponding controls automatically.
@@ -278,6 +282,9 @@ curl http://127.0.0.1:8000/rag/documents      # list indexed documents
 - `POST /admin/models/add` — register a cached model at runtime, persist it to your config, and
   load it in the background (this backs the web app's **＋ Add model**). Loads are non-blocking:
   the rest of the API stays responsive while a large model loads.
+- `POST /v1/messages` — Anthropic Messages API (text), for Anthropic SDK clients.
+- `GET/POST /sessions`, `GET/PATCH/DELETE /sessions/{id}`, `POST /sessions/{id}/messages` — chat
+  history (local SQLite); back the web app's saved-chats list.
 - `GET /healthz` — status, active profile, resident models.
 - `GET /metrics`, `GET /metrics/summary`, `GET /observability` — see [Observability](#observability).
 
@@ -438,14 +445,27 @@ when you want proof the live system holds up.
 Single end-to-end smoke checks against real models also live in `scripts/smoke_*.py`. Because
 the engine is Mac/Metal-specific, all of this runs locally.
 
+- **Frontend end-to-end (Playwright).** A browser regression drives the real UI against a live
+  server (the tiny dev model): it sends a chat, confirms the streamed reply, and verifies the
+  conversation is saved to history, survives a reload, and reopens. One-time setup, then run:
+
+  ```bash
+  bash scripts/build-ui.sh                       # the e2e serves the built UI
+  npm --prefix web install && npm --prefix web run e2e:install   # Playwright + chromium
+  npm --prefix web run e2e
+  ```
+
+  Playwright starts/stops the server itself and writes history to a throwaway DB, so it never
+  touches your real `.crucible/history.db`.
+
 ### Project layout
 
 ```
 src/crucible/   server (gateway), manager (orchestration), backends (text/vision/embed/
-                rerank + image parsing + loop guard), batching, rag, observability,
-                benchmark, cli, client, service
+                rerank + image parsing + loop guard), batching, rag, history (chat
+                sessions), observability, benchmark, cli, client, service
 config/         models.yaml (default) and dev.yaml; hardware profiles + sampling defaults
-web/            the Vite + React chat app (built to web/dist, served at /)
+web/            the Vite + React chat app (built to web/dist, served at /); e2e/ Playwright
 tests/          GPU-free unit/acceptance tests + tests/stress (opt-in real-model gauntlet)
 docs/           architecture, hardware, models, api, ui, roadmap
 benchmarks/     benchmark specs and generated reports
@@ -456,7 +476,7 @@ scripts/        check.sh (gate), build-ui.sh, install-hooks.sh, smoke_*.py
 ### Status
 
 Crucible is built in milestones; text, vision, embeddings, reranking, RAG, the model
-manager, observability, packaging, and the web UI are in place. LoRA fine-tuning and
-adapter serving are the remaining planned work. An Anthropic `/v1/messages` surface is on
-the roadmap but not yet implemented (the API is OpenAI-compatible today). See
-[`docs/roadmap.md`](docs/roadmap.md).
+manager, observability, packaging, the web UI (with saved chat history), an
+Anthropic-compatible `/v1/messages` surface (text), and client-disconnect cancellation are
+in place. LoRA fine-tuning and adapter serving are the remaining planned work; Anthropic
+image/tool blocks are not mapped yet. See [`docs/roadmap.md`](docs/roadmap.md).

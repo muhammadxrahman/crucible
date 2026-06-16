@@ -16,7 +16,19 @@ const slug = (p) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
-export default function SidePanel({ models, hw, onRefresh, onCollapse, onShutdown }) {
+export default function SidePanel({
+  models,
+  hw,
+  historyEnabled = false,
+  sessions = [],
+  activeSessionId,
+  onNewChat,
+  onSelectSession,
+  onDeleteSession,
+  onRefresh,
+  onCollapse,
+  onShutdown,
+}) {
   const [metrics, setMetrics] = useState(null);
   const [acting, setActing] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -74,6 +86,35 @@ export default function SidePanel({ models, hw, onRefresh, onCollapse, onShutdow
             setShowAdd(false);
           }}
         />
+      )}
+
+      {historyEnabled && (
+        <div className="chats">
+          <button className="new-chat" onClick={onNewChat} title="Start a new conversation">
+            ＋ New chat
+          </button>
+          {sessions.map((s) => (
+            <div
+              key={s.id}
+              className={`chat-row${s.id === activeSessionId ? " active" : ""}`}
+              onClick={() => onSelectSession?.(s.id)}
+            >
+              <span className="chat-title" title={s.title}>
+                {s.title}
+              </span>
+              <button
+                className="chat-del"
+                title="Delete chat"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(`Delete "${s.title}"?`)) onDeleteSession?.(s.id);
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       <div className="models">

@@ -16,6 +16,8 @@ docs/conventions.md
 web/node_modules/
 web/dist/
 web/.vite/
+web/test-results/
+web/playwright-report/
 
 # Models and data (never commit weights or caches)
 models/

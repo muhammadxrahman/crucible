@@ -22,7 +22,7 @@ Lists models. Each entry reports its `id` (served_name), `type`, the underlying 
 ## Anthropic-compatible endpoint
 
 ### POST /v1/messages
-Maps the Anthropic messages format onto the same backends. Honors `model`, `messages`, `system`, `max_tokens`, `stream`, and tool use. Enables Anthropic SDK clients without code changes beyond the base URL.
+Maps the Anthropic Messages format onto the same text backends, so the Anthropic SDK works by changing only the base URL. Honors `model`, `messages`, `system`, `max_tokens` (required, as Anthropic mandates), `stream`, `temperature`, `top_p`, and `stop_sequences`. Text content is supported; image blocks and tool use are not mapped yet. Non-streaming returns a `message` object (`content: [{type:"text",...}]`, `stop_reason` mapped to `end_turn`/`max_tokens`, `usage.input_tokens`/`output_tokens`). Streaming emits Anthropic's named SSE events: `message_start`, `content_block_start`, `content_block_delta` (`text_delta`), `content_block_stop`, `message_delta`, `message_stop`.
 
 ## Ops endpoints
 
@@ -65,6 +65,19 @@ Runs two-stage retrieval (dense search then rerank) and grounded generation. Ret
 
 ### GET /rag/documents
 Lists indexed documents.
+
+### Sessions (chat history)
+Back the web app's saved-conversation list. Enabled when the server is started with a history store (the default for `mlxd serve`); when disabled they return `503 history_unavailable`. The store is local SQLite (`.crucible/history.db`, overridable with `CRUCIBLE_HISTORY_DB`).
+
+- `GET /sessions` — list sessions (most-recently-updated first) with `id`, `title`, `model`, timestamps, and `messages_count`.
+- `POST /sessions` — create a session (`{title?, model?}`); returns the new session.
+- `GET /sessions/{id}` — the session plus its ordered `messages` (`{role, content, created_at}`); `404 session_not_found` if unknown.
+- `POST /sessions/{id}/messages` — append a message (`{role, content}`).
+- `PATCH /sessions/{id}` — rename (`{title}`).
+- `DELETE /sessions/{id}` — delete the session and its messages.
+
+### Streaming and cancellation
+Streaming responses (`/v1/chat/completions`, `/v1/completions`, `/v1/messages`) stop generating when the client disconnects: the request is dropped from the running batch and its KV slot freed, instead of generating to EOS for output no one will read. The web app's send button becomes a stop button mid-stream.
 
 ## Conventions
 

@@ -84,6 +84,64 @@ def chat_stream(events: Iterator[GenEvent], model: str) -> Iterator[dict]:
             yield chunk({}, ev.finish_reason)
 
 
+# --- Anthropic messages ---
+
+
+def _stop_reason(final: Final) -> str:
+    """Map our finish_reason onto Anthropic's vocabulary."""
+    return "max_tokens" if final.finish_reason == "length" else "end_turn"
+
+
+def messages_full(events: Iterator[GenEvent], model: str) -> dict:
+    text, final = _drain(events)
+    return {
+        "id": _id("msg"),
+        "type": "message",
+        "role": "assistant",
+        "model": model,
+        "content": [{"type": "text", "text": text}],
+        "stop_reason": _stop_reason(final),
+        "stop_sequence": None,
+        "usage": {"input_tokens": final.prompt_tokens, "output_tokens": final.completion_tokens},
+    }
+
+
+def messages_stream(events: Iterator[GenEvent], model: str) -> Iterator[dict]:
+    """Anthropic's streaming event sequence. Each dict's `type` is also its SSE event name."""
+    mid = _id("msg")
+    yield {
+        "type": "message_start",
+        "message": {
+            "id": mid,
+            "type": "message",
+            "role": "assistant",
+            "model": model,
+            "content": [],
+            "stop_reason": None,
+            "stop_sequence": None,
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+        },
+    }
+    yield {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+    final = Final(prompt_tokens=0, completion_tokens=0, finish_reason="stop")
+    for ev in events:
+        if isinstance(ev, Delta):
+            yield {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": ev.text},
+            }
+        else:
+            final = ev
+    yield {"type": "content_block_stop", "index": 0}
+    yield {
+        "type": "message_delta",
+        "delta": {"stop_reason": _stop_reason(final), "stop_sequence": None},
+        "usage": {"output_tokens": final.completion_tokens},
+    }
+    yield {"type": "message_stop"}
+
+
 # --- legacy completions ---
 
 

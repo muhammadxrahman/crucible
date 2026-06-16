@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import ChatView from "./ChatView.jsx";
 import SidePanel from "./SidePanel.jsx";
-import { health, listModels } from "./api.js";
+import { deleteSession, getSession, health, listModels, listSessions } from "./api.js";
 
 export default function App() {
   const [models, setModels] = useState([]);
@@ -9,6 +9,10 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [error, setError] = useState(null);
   const [stopped, setStopped] = useState(false);
+
+  const [historyEnabled, setHistoryEnabled] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [active, setActive] = useState(null); // { id, messages: [{role,text}] } | null
 
   const refresh = useCallback(async () => {
     try {
@@ -21,9 +25,37 @@ export default function App() {
     }
   }, []);
 
+  const reloadSessions = useCallback(async () => {
+    try {
+      setSessions(await listSessions());
+      setHistoryEnabled(true);
+    } catch {
+      setHistoryEnabled(false); // server has history disabled (503) — hide the Chats UI
+    }
+  }, []);
+
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    reloadSessions();
+  }, [refresh, reloadSessions]);
+
+  const newChat = () => setActive(null);
+
+  const openSession = async (id) => {
+    const s = await getSession(id);
+    setActive({ id: s.id, messages: s.messages.map((m) => ({ role: m.role, text: m.content })) });
+  };
+
+  const removeSession = async (id) => {
+    await deleteSession(id);
+    if (active?.id === id) setActive(null);
+    reloadSessions();
+  };
+
+  const onSessionCreated = (s) => {
+    setActive({ id: s.id, messages: null }); // ChatView already holds the live messages
+    reloadSessions();
+  };
 
   const chatModels = models.filter((m) => m.type === "lm" || m.type === "vlm");
   const hasVision = models.some((m) => m.type === "vlm");
@@ -46,6 +78,12 @@ export default function App() {
         <SidePanel
           models={models}
           hw={hw}
+          historyEnabled={historyEnabled}
+          sessions={sessions}
+          activeSessionId={active?.id}
+          onNewChat={newChat}
+          onSelectSession={openSession}
+          onDeleteSession={removeSession}
           onRefresh={refresh}
           onCollapse={() => setCollapsed(true)}
           onShutdown={() => setStopped(true)}
@@ -61,7 +99,16 @@ export default function App() {
           <span className="brand">CRUCIBLE</span>
           {error && <span className="err">· {error}</span>}
         </header>
-        <ChatView models={chatModels} hasVision={hasVision} hasRag={hasRag} />
+        <ChatView
+          models={chatModels}
+          hasVision={hasVision}
+          hasRag={hasRag}
+          historyEnabled={historyEnabled}
+          sessionId={active?.id}
+          initialMessages={active?.messages}
+          onSessionCreated={onSessionCreated}
+          onActivity={reloadSessions}
+        />
       </main>
     </div>
   );

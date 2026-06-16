@@ -6,6 +6,7 @@ without loading a model.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from crucible.backends import Delta, Final, SamplingParams
@@ -186,6 +187,21 @@ def test_loop_guard_disabled_runs_full() -> None:
     ch = sched.submit([10], SamplingParams(max_tokens=200, loop_guard=False))
     _, final = drain(ch)
     assert final.completion_tokens == 36  # ran the whole script
+    sched.stop()
+
+
+def test_cancel_retires_inflight_request() -> None:
+    # A client that disconnects mid-stream must have its sequence dropped from the batch so the
+    # KV slot is freed, instead of generating to the end for output nobody reads.
+    sched = make_scheduler([[1] * 1000])  # a long-running generation
+    ch = sched.submit([10], SamplingParams(max_tokens=2000))
+    assert isinstance(ch.get(timeout=5), Delta)  # generation is underway
+
+    sched.cancel(ch)
+    deadline = time.time() + 5
+    while time.time() < deadline and sched.snapshot()["batch_size"] != 0:
+        time.sleep(0.01)
+    assert sched.snapshot()["batch_size"] == 0  # the worker retired it promptly
     sched.stop()
 
 

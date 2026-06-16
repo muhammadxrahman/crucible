@@ -1,23 +1,42 @@
 import React, { useEffect, useRef, useState } from "react";
-import { fileToDataUrl, ragQuery, streamChat, uploadDocs } from "./api.js";
+import { addMessage, createSession, fileToDataUrl, ragQuery, streamChat, uploadDocs } from "./api.js";
 
 const isImage = (f) => f.type.startsWith("image/");
 
-export default function ChatView({ models, hasVision, hasRag }) {
+export default function ChatView({
+  models,
+  hasVision,
+  hasRag,
+  historyEnabled = false,
+  sessionId,
+  initialMessages,
+  onSessionCreated,
+  onActivity,
+}) {
   const [model, setModel] = useState("");
   const [grounded, setGrounded] = useState(false);
   const [thinking, setThinking] = useState(false);
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(initialMessages || []);
   const [input, setInput] = useState("");
   const [images, setImages] = useState([]); // {name, url}
   const [docs, setDocs] = useState([]); // indexed doc names
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
   const endRef = useRef(null);
+  const sidRef = useRef(sessionId); // the session being written to right now
+  const abortRef = useRef(null); // AbortController for the in-flight stream
 
   useEffect(() => {
     if (!model && models.length) setModel(models[0].id);
   }, [models, model]);
+
+  // Switch conversations when a different session is opened (or "New chat" clears it). The guard
+  // skips the session we just created mid-send, so an in-progress reply isn't wiped.
+  useEffect(() => {
+    if (sessionId === sidRef.current) return;
+    sidRef.current = sessionId;
+    setMessages(initialMessages || []);
+  }, [sessionId, initialMessages]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -54,24 +73,60 @@ export default function ChatView({ models, hasVision, hasRag }) {
         return next;
       });
 
+    // Persist into a session (creating one from the first message) when history is enabled.
+    let sid = sidRef.current;
+    if (historyEnabled && !sid) {
+      try {
+        const s = await createSession({ title: text.slice(0, 60) || "New chat", model });
+        sid = s.id;
+        sidRef.current = sid;
+        onSessionCreated?.(s);
+      } catch {}
+    }
+    if (historyEnabled && sid && text) {
+      try {
+        await addMessage(sid, "user", text);
+      } catch {}
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let reply = "";
     try {
       if (grounded && hasRag) {
         const res = await ragQuery(text);
+        reply = res.answer;
         setAssistant((a) => ({ ...a, text: res.answer, sources: res.sources }));
       } else {
         await streamChat({
           model,
           thinking,
+          signal: controller.signal,
           messages: openaiMessages(history),
-          onDelta: (chunk) => setAssistant((a) => ({ ...a, text: a.text + chunk })),
+          onDelta: (chunk) => {
+            reply += chunk;
+            setAssistant((a) => ({ ...a, text: a.text + chunk }));
+          },
         });
       }
     } catch (e) {
-      setAssistant((a) => ({ ...a, text: (a.text || "") + `\n\n⚠ ${e.message}` }));
+      if (e.name !== "AbortError") {
+        reply += `\n\n⚠ ${e.message}`;
+        setAssistant((a) => ({ ...a, text: (a.text || "") + `\n\n⚠ ${e.message}` }));
+      }
     } finally {
+      abortRef.current = null;
       setBusy(false);
+      if (historyEnabled && sid && reply) {
+        try {
+          await addMessage(sid, "assistant", reply);
+        } catch {}
+      }
+      onActivity?.();
     }
   }
+
+  const stop = () => abortRef.current?.abort();
 
   async function onFiles(fileList) {
     const files = [...fileList];
@@ -178,9 +233,15 @@ export default function ChatView({ models, hasVision, hasRag }) {
             placeholder={grounded ? "Ask about your documents…" : "Type a message…"}
             rows={1}
           />
-          <button className="send" disabled={busy} onClick={send}>
-            {busy ? "…" : "▷"}
-          </button>
+          {busy ? (
+            <button className="send stop" onClick={stop} title="Stop generating">
+              ◼
+            </button>
+          ) : (
+            <button className="send" onClick={send} title="Send">
+              ▷
+            </button>
+          )}
         </div>
       </div>
     </div>

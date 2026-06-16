@@ -13,17 +13,20 @@ from crucible.config import Sampling
 # --- chat ---
 
 
+def _pick(v, d):
+    return d if v is None else v
+
+
 def _params(req, defaults: Sampling) -> SamplingParams:
     """Build SamplingParams, filling any field the request omitted from server defaults."""
-    pick = lambda v, d: d if v is None else v  # noqa: E731
     return SamplingParams(
         max_tokens=req.max_tokens or defaults.max_tokens,
-        temperature=pick(req.temperature, defaults.temperature),
-        top_p=pick(req.top_p, defaults.top_p),
-        repetition_penalty=pick(req.repetition_penalty, defaults.repetition_penalty),
+        temperature=_pick(req.temperature, defaults.temperature),
+        top_p=_pick(req.top_p, defaults.top_p),
+        repetition_penalty=_pick(req.repetition_penalty, defaults.repetition_penalty),
         repetition_context_size=defaults.repetition_context_size,
-        loop_guard=pick(getattr(req, "loop_guard", None), defaults.loop_guard),
-        enable_thinking=pick(getattr(req, "enable_thinking", None), defaults.enable_thinking),
+        loop_guard=_pick(getattr(req, "loop_guard", None), defaults.loop_guard),
+        enable_thinking=_pick(getattr(req, "enable_thinking", None), defaults.enable_thinking),
         stop=_as_list(req.stop),
     )
 
@@ -70,6 +73,49 @@ class CompletionRequest(BaseModel):
 
     def first_prompt(self) -> str:
         return self.prompt[0] if isinstance(self.prompt, list) else self.prompt
+
+
+# --- Anthropic messages surface ---
+
+
+class AnthropicMessage(BaseModel):
+    role: str
+    content: str | list[dict]
+
+
+class AnthropicMessagesRequest(BaseModel):
+    """The Anthropic Messages API. Mapped onto the same text backends so the Anthropic SDK
+    works by changing only the base URL. Text content is supported; image blocks are ignored."""
+
+    model: str
+    messages: list[AnthropicMessage]
+    system: str | None = None
+    max_tokens: int = Field(..., gt=0)  # Anthropic requires it; honored as the output cap
+    stream: bool = False
+    temperature: float | None = Field(default=None, ge=0)
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    stop_sequences: list[str] | None = None
+    enable_thinking: bool | None = None  # Crucible extension (reasoning models)
+
+    def sampling(self, defaults: Sampling) -> SamplingParams:
+        return SamplingParams(
+            max_tokens=self.max_tokens,
+            temperature=_pick(self.temperature, defaults.temperature),
+            top_p=_pick(self.top_p, defaults.top_p),
+            repetition_penalty=defaults.repetition_penalty,
+            repetition_context_size=defaults.repetition_context_size,
+            loop_guard=defaults.loop_guard,
+            enable_thinking=_pick(self.enable_thinking, defaults.enable_thinking),
+            stop=list(self.stop_sequences or []),
+        )
+
+    def rendered_messages(self) -> list[dict]:
+        msgs: list[dict] = []
+        if self.system:
+            msgs.append({"role": "system", "content": self.system})
+        for m in self.messages:
+            msgs.append({"role": m.role, "content": _flatten(m.content)})
+        return msgs
 
 
 # --- helpers ---

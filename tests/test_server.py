@@ -343,6 +343,112 @@ def test_observability_serves_dashboard_html() -> None:
     assert "<title>Crucible" in r.text
 
 
+def make_history_client() -> TestClient:
+    from crucible.history import HistoryStore
+
+    reg = Registry.model_validate(
+        {"models": [{"path": "fake/tiny", "type": "lm", "served_name": "primary", "pin": True}]}
+    )
+    runtime = RuntimeProfile(
+        name="pro64",
+        ceiling_bytes=10**12,
+        single_resident=False,
+        default_context=32768,
+        kv_bits=8,
+        vision=True,
+    )
+    manager = ModelManager(reg, runtime, lambda entry: (FakeEngine(), 1000))
+    manager.warmup()
+    return TestClient(create_app(manager, runtime, history=HistoryStore(":memory:")))
+
+
+def test_session_lifecycle_over_http() -> None:
+    c = make_history_client()
+    sid = c.post("/sessions", json={"title": "My chat", "model": "primary"}).json()["id"]
+
+    c.post("/sessions/" + sid + "/messages", json={"role": "user", "content": "hello"})
+    c.post("/sessions/" + sid + "/messages", json={"role": "assistant", "content": "hi"})
+
+    sessions = c.get("/sessions").json()["sessions"]
+    assert sessions[0]["id"] == sid and sessions[0]["messages_count"] == 2
+
+    full = c.get("/sessions/" + sid).json()
+    assert [m["content"] for m in full["messages"]] == ["hello", "hi"]
+
+    assert c.patch("/sessions/" + sid, json={"title": "Renamed"}).status_code == 200
+    assert c.get("/sessions").json()["sessions"][0]["title"] == "Renamed"
+
+    assert c.delete("/sessions/" + sid).status_code == 200
+    assert c.get("/sessions").json()["sessions"] == []
+
+
+def test_session_not_found_is_404() -> None:
+    c = make_history_client()
+    r = c.get("/sessions/ghost")
+    assert r.status_code == 404 and r.json()["error"]["type"] == "session_not_found"
+
+
+def test_history_disabled_returns_503_by_default() -> None:
+    c, _ = make_client()  # no history store wired
+    r = c.get("/sessions")
+    assert r.status_code == 503 and r.json()["error"]["type"] == "history_unavailable"
+
+
+def test_anthropic_messages_non_streaming() -> None:
+    c, engine = make_client()
+    r = c.post(
+        "/v1/messages",
+        json={
+            "model": "primary",
+            "max_tokens": 64,
+            "system": "You are terse.",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["type"] == "message" and body["role"] == "assistant"
+    assert body["content"][0] == {"type": "text", "text": "Hello, world!"}
+    assert body["stop_reason"] == "end_turn"
+    assert body["usage"]["output_tokens"] == 4
+    # the `system` field is threaded in as a leading system message
+    assert engine.last_messages[0] == {"role": "system", "content": "You are terse."}
+
+
+def test_anthropic_messages_streaming_event_sequence() -> None:
+    c, _ = make_client()
+    with c.stream(
+        "POST",
+        "/v1/messages",
+        json={
+            "model": "primary",
+            "max_tokens": 64,
+            "stream": True,
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    ) as r:
+        assert r.status_code == 200
+        lines = [ln for ln in r.iter_lines()]
+
+    events = [ln[len("event: ") :] for ln in lines if ln.startswith("event: ")]
+    assert events[0] == "message_start"
+    assert "content_block_delta" in events
+    assert events[-1] == "message_stop"
+    text = ""
+    for ln in lines:
+        if ln.startswith("data: "):
+            payload = json.loads(ln[len("data: ") :])
+            if payload["type"] == "content_block_delta":
+                text += payload["delta"]["text"]
+    assert text == "Hello, world!"
+
+
+def test_anthropic_max_tokens_required() -> None:
+    c, _ = make_client()
+    r = c.post("/v1/messages", json={"model": "primary", "messages": []})
+    assert r.status_code == 422  # Anthropic requires max_tokens
+
+
 def test_list_models_reports_real_path() -> None:
     c, _ = make_client()
     data = c.get("/v1/models").json()["data"]

@@ -54,6 +54,7 @@ class _Req:
     completion_tokens: int = 0
     t_submit: float = 0.0
     t_first: float = 0.0
+    cancelled: bool = False  # set when the client disconnects; the worker drops/retires it
 
 
 class BatchScheduler:
@@ -131,6 +132,18 @@ class BatchScheduler:
             self._cv.notify()
         return out
 
+    def cancel(self, out: queue.Queue) -> None:
+        """Mark the request feeding `out` as cancelled (client disconnected). The worker drops
+        it from the queue or removes it from the running batch, freeing its KV slot. Idempotent."""
+        with self._cv:
+            for r in self._pending:
+                if r.out is out:
+                    r.cancelled = True
+            for r in self._active.values():
+                if r.out is out:
+                    r.cancelled = True
+            self._cv.notify()
+
     def stop(self) -> None:
         with self._cv:
             self._stop = True
@@ -171,9 +184,15 @@ class BatchScheduler:
                     self._cv.wait()
                 if self._stop:
                     return
+                # Drop cancelled requests before they are admitted; collect cancelled in-flight
+                # ones to retire (free their KV slot) outside the lock.
+                self._pending = deque(r for r in self._pending if not r.cancelled)
                 new = list(self._pending)
                 self._pending.clear()
                 self.counters.queue_depth = 0
+                cancelled = [r for r in self._active.values() if r.cancelled]
+            for r in cancelled:
+                self._retire(r)
             if new:
                 self._admit(new)
             responses = self._backend.next_generated()

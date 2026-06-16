@@ -24,11 +24,17 @@ class BatchedTextEngine:
     def stream(self, messages: list[dict], params: SamplingParams) -> Iterator[GenEvent]:
         tokens = render_chat_prompt(self._tok, messages, enable_thinking=params.enable_thinking)
         channel = self._scheduler.submit(list(tokens), params)
-        while True:
-            event = channel.get()
-            yield event
-            if isinstance(event, Final):
-                return
+        try:
+            while True:
+                event = channel.get()
+                yield event
+                if isinstance(event, Final):
+                    return
+        except GeneratorExit:
+            # The client disconnected mid-stream: stop generating and free the KV slot instead
+            # of running to EOS for output nobody will read.
+            self._scheduler.cancel(channel)
+            raise
 
     def materialize(self) -> None:
         # The model is already realized when the scheduler is built.
