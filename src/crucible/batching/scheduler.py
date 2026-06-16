@@ -89,8 +89,13 @@ class BatchScheduler:
 
     # --- public API ---
 
-    def wait_ready(self, timeout: float = 300) -> int:
-        """Block until the worker has loaded the model; return its resident bytes."""
+    def wait_ready(self, timeout: float | None = None) -> int:
+        """Block until the worker has loaded the model; return its resident bytes.
+
+        Default is no timeout: a first-run model download can take a long time and must not
+        be killed mid-transfer. The worker always sets the ready event (on success or
+        failure), so this returns as soon as loading finishes either way.
+        """
         if not self._ready.wait(timeout):
             raise TimeoutError("batch scheduler did not become ready")
         if self._init_error is not None:

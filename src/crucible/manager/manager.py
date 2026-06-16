@@ -154,12 +154,20 @@ class ModelManager:
                 self._resident[name].pinned = pinned
             return self._status(name)
 
-    def warmup(self) -> None:
-        """Eagerly load config-pinned models so they are resident and counted at boot."""
+    def warmup(self) -> list[tuple[str, str]]:
+        """Eagerly load config-pinned models. A model that fails to load (download error,
+        out of memory) is skipped with its error returned, not raised, so the server still
+        starts and serves the rest; that model loads lazily on first request."""
+        failures: list[tuple[str, str]] = []
         with self._lock:
             for name in self._config_pins:
-                if name not in self._resident:
+                if name in self._resident:
+                    continue
+                try:
                     self._load(name)
+                except Exception as e:  # noqa: BLE001 - one bad model must not sink the server
+                    failures.append((name, str(e)))
+        return failures
 
     def sweep_ttl(self) -> list[str]:
         with self._lock:

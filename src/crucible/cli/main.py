@@ -1,7 +1,8 @@
 """The mlxd command-line entry point.
 
-Commands: `serve`, `models` (list/load/unload/pin via the running server), `bench`,
-`profile`, `validate`, `service` (launchd autostart), and `train` (reserved for M9).
+Commands: `serve`, `pull` (pre-download model weights), `models` (list/load/unload/pin via
+the running server), `bench`, `profile`, `validate`, `service` (launchd autostart), and
+`train` (reserved for M9).
 """
 
 from __future__ import annotations
@@ -86,7 +87,19 @@ def serve(
         f"single_resident={runtime.single_resident}, batching={reg.server.batching}",
         fg=typer.colors.CYAN,
     )
-    manager.warmup()  # eagerly load pinned models
+    pinned = [m.served_name for m in reg.models if m.pin]
+    if pinned:
+        typer.secho(
+            f"warming up pinned model(s) {pinned} (downloading if not cached; "
+            "pre-fetch with `mlxd pull` to avoid the wait) ...",
+            fg=typer.colors.CYAN,
+        )
+    for name, err in manager.warmup():  # resilient: a failed model is skipped, not fatal
+        typer.secho(
+            f"  warning: '{name}' did not load ({err}); will retry lazily.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     from crucible.rag import RagPipeline, resolve_rag_roles
 
@@ -146,6 +159,45 @@ def validate(
         by_type[m.type] = by_type.get(m.type, 0) + 1
     summary = ", ".join(f"{n} {t}" for t, n in sorted(by_type.items())) or "no models"
     typer.secho(f"OK: {config} valid ({summary}); active profile {active}.", fg=typer.colors.GREEN)
+
+
+@app.command()
+def pull(
+    names: list[str] = typer.Argument(None, help="served_name(s) to pull; default: all in config."),
+    config: Path = typer.Option(DEFAULT_CONFIG, "--config", "-c", help="Path to models.yaml."),
+) -> None:
+    """Download model weights into the local cache, with progress, before serving.
+
+    Run this first for large models (e.g. the 30B): serving then loads from cache instead of
+    blocking on a multi-gigabyte download at startup.
+    """
+    try:
+        reg = load_registry(config)
+    except ConfigError as e:
+        typer.secho(f"config error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from e
+
+    entries = reg.models
+    if names:
+        entries = [m for m in reg.models if m.served_name in names]
+        missing = set(names) - {m.served_name for m in entries}
+        if missing:
+            typer.secho(f"unknown served_name(s): {sorted(missing)}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2)
+    if not entries:
+        typer.secho("nothing to pull.", fg=typer.colors.YELLOW)
+        return
+
+    from huggingface_hub import snapshot_download
+
+    for e in entries:
+        typer.secho(f"pulling {e.served_name} ({e.path}) ...", fg=typer.colors.CYAN)
+        try:
+            snapshot_download(e.path)
+        except Exception as err:  # noqa: BLE001
+            typer.secho(f"  failed: {err}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from err
+    typer.secho(f"pulled {len(entries)} model(s) into the local cache.", fg=typer.colors.GREEN)
 
 
 @app.command()

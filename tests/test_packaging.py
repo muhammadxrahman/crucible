@@ -107,6 +107,38 @@ def test_cli_validate_rejects_bad_config(tmp_path) -> None:
     assert "invalid config" in result.stderr
 
 
+def _pull_config(tmp_path) -> str:
+    cfg = tmp_path / "m.yaml"
+    cfg.write_text(
+        "models:\n"
+        "  - {path: org/a, type: lm, served_name: a}\n"
+        "  - {path: org/b, type: embedding, served_name: b}\n"
+    )
+    return str(cfg)
+
+
+def test_cli_pull_downloads_each_model(monkeypatch, tmp_path) -> None:
+    pulled: list[str] = []
+    monkeypatch.setattr("huggingface_hub.snapshot_download", lambda repo, **k: pulled.append(repo))
+    result = runner.invoke(app, ["pull", "--config", _pull_config(tmp_path)])
+    assert result.exit_code == 0
+    assert pulled == ["org/a", "org/b"]
+
+
+def test_cli_pull_specific_model(monkeypatch, tmp_path) -> None:
+    pulled: list[str] = []
+    monkeypatch.setattr("huggingface_hub.snapshot_download", lambda repo, **k: pulled.append(repo))
+    result = runner.invoke(app, ["pull", "b", "--config", _pull_config(tmp_path)])
+    assert result.exit_code == 0
+    assert pulled == ["org/b"]
+
+
+def test_cli_pull_unknown_name_errors(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("huggingface_hub.snapshot_download", lambda repo, **k: None)
+    result = runner.invoke(app, ["pull", "ghost", "--config", _pull_config(tmp_path)])
+    assert result.exit_code == 2
+
+
 def test_cli_train_is_reserved_for_m9() -> None:
     result = runner.invoke(app, ["train"])
     assert result.exit_code == 1

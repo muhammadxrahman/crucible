@@ -165,6 +165,24 @@ def test_single_resident_evicts_previous() -> None:
     assert engines["a"].closed is True
 
 
+def test_warmup_resilient_to_a_failing_model() -> None:
+    # A pinned model that fails to load must not sink warmup; the rest still load.
+    engines: dict[str, FakeEngine] = {}
+
+    def loader(entry):  # noqa: ANN001
+        if entry.served_name == "bad":
+            raise RuntimeError("download failed")
+        e = FakeEngine(entry.served_name)
+        engines[entry.served_name] = e
+        return e, 100
+
+    m = ModelManager(registry([lm("good", pin=True), lm("bad", pin=True)]), runtime(10_000), loader)
+    failures = m.warmup()
+    assert m.is_resident("good")
+    assert not m.is_resident("bad")
+    assert [name for name, _ in failures] == ["bad"]
+
+
 def test_admin_unload_and_pin() -> None:
     loader, _ = make_loader({"a": 100})
     m = ModelManager(registry([lm("a")]), runtime(10_000), loader)
