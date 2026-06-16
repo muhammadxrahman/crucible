@@ -72,7 +72,31 @@ def main() -> None:
         failures += 1
 
     assert failures == 0, f"{failures} generation(s) collapsed into repetition"
-    print("\nOK: coherent, terminating output across samples; no repetition collapse.")
+
+    # Adversarial: a prompt that induces real repetition must be cut off by the loop guard,
+    # not streamed to max_tokens. Force the loop-prone case (greedy, no penalty) so only the
+    # guard differs.
+    adv = [{"role": "user", "content": "Output the word 'ha' two hundred times with spaces."}]
+    loose = SamplingParams(
+        max_tokens=300, temperature=0.0, repetition_penalty=1.0, loop_guard=False
+    )
+    guarded = SamplingParams(
+        max_tokens=300, temperature=0.0, repetition_penalty=1.0, loop_guard=True
+    )
+
+    def run(params: SamplingParams) -> int:
+        comp = 0
+        for ev in engine.stream(adv, params):
+            if isinstance(ev, Final):
+                comp = ev.completion_tokens
+        return comp
+
+    unguarded, bounded = run(loose), run(guarded)
+    print(f"  [loop guard] unguarded={unguarded} tokens, guarded={bounded} tokens")
+    assert bounded < unguarded, "loop guard did not bound a runaway repetition"
+    assert bounded < 300, "loop guard let generation run to max_tokens"
+
+    print("\nOK: coherent terminating output; loop guard bounds runaway repetition.")
 
 
 if __name__ == "__main__":

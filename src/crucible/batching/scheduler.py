@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from crucible.backends.base import Delta, Final, SamplingParams
+from crucible.backends.loopguard import LoopGuard
 from crucible.backends.text import _apply_stop, _logits_processors
 
 from .backend import BatchBackend
@@ -45,6 +46,7 @@ class _Req:
     params: SamplingParams
     sampler: Any
     logits: Any  # per-request logits processors (repetition penalty), or None
+    guard: Any  # per-request LoopGuard, or None
     out: queue.Queue
     detok: Any
     uid: int | None = None
@@ -113,6 +115,7 @@ class BatchScheduler:
             params=params,
             sampler=self._make_sampler(temp=params.temperature, top_p=params.top_p),
             logits=_logits_processors(params),
+            guard=LoopGuard() if params.loop_guard else None,
             out=out,
             detok=detok,
         )
@@ -222,6 +225,10 @@ class BatchScheduler:
                 r.detok.add_token(resp.token)
                 r.completion_tokens += 1
                 if self._emit(r, done):  # string stop sequence hit
+                    self._finalize(r, "stop")
+                    self._retire(r)
+                    continue
+                if r.guard is not None and r.guard.feed(resp.token):  # runaway repetition
                     self._finalize(r, "stop")
                     self._retire(r)
                     continue

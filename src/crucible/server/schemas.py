@@ -22,6 +22,7 @@ def _params(req, defaults: Sampling) -> SamplingParams:
         top_p=pick(req.top_p, defaults.top_p),
         repetition_penalty=pick(req.repetition_penalty, defaults.repetition_penalty),
         repetition_context_size=defaults.repetition_context_size,
+        loop_guard=pick(getattr(req, "loop_guard", None), defaults.loop_guard),
         stop=_as_list(req.stop),
     )
 
@@ -39,6 +40,7 @@ class ChatCompletionRequest(BaseModel):
     temperature: float | None = Field(default=None, ge=0)
     top_p: float | None = Field(default=None, gt=0, le=1)
     repetition_penalty: float | None = Field(default=None, ge=1)
+    loop_guard: bool | None = None
     max_tokens: int | None = Field(default=None, gt=0)
     stop: str | list[str] | None = None
 
@@ -56,6 +58,7 @@ class CompletionRequest(BaseModel):
     temperature: float | None = Field(default=None, ge=0)
     top_p: float | None = Field(default=None, gt=0, le=1)
     repetition_penalty: float | None = Field(default=None, ge=1)
+    loop_guard: bool | None = None
     max_tokens: int | None = Field(default=None, gt=0)
     stop: str | list[str] | None = None
 

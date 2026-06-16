@@ -14,6 +14,7 @@ from mlx_lm.models.cache import can_trim_prompt_cache, make_prompt_cache, trim_p
 from mlx_lm.sample_utils import make_logits_processors, make_sampler
 
 from .base import Delta, Final, GenEvent, SamplingParams
+from .loopguard import LoopGuard
 
 
 class MLXTextEngine:
@@ -71,6 +72,7 @@ class MLXTextEngine:
         processors = _logits_processors(params)
         if processors:
             kwargs["logits_processors"] = processors
+        guard = LoopGuard() if params.loop_guard else None
         for resp in stream_generate(
             self._model,
             self._tokenizer,
@@ -92,6 +94,9 @@ class MLXTextEngine:
                 break
             if resp.finish_reason is not None:
                 finish_reason = resp.finish_reason
+                break
+            if guard is not None and guard.feed(resp.token):  # runaway repetition
+                finish_reason = "stop"
                 break
 
         if cache is not None:

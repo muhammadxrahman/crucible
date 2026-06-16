@@ -183,6 +183,24 @@ def test_request_overrides_sampling_defaults() -> None:
     assert engine.last_params.repetition_penalty == 1.3
 
 
+def test_loop_guard_default_on_and_overridable() -> None:
+    c, engine = make_client()
+    c.post(
+        "/v1/chat/completions",
+        json={"model": "primary", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert engine.last_params.loop_guard is True
+    c.post(
+        "/v1/chat/completions",
+        json={
+            "model": "primary",
+            "messages": [{"role": "user", "content": "hi"}],
+            "loop_guard": False,
+        },
+    )
+    assert engine.last_params.loop_guard is False
+
+
 def make_multi_client() -> tuple[TestClient, dict[str, FakeEngine]]:
     reg = Registry.model_validate(
         {

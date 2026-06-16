@@ -18,6 +18,7 @@ from crucible.manager.memory import MlxMemory
 
 from .base import Delta, Final, GenEvent, SamplingParams
 from .images import ImageRef, materialize, text_messages
+from .loopguard import LoopGuard
 from .text import _apply_stop
 
 
@@ -75,6 +76,7 @@ class MLXVLMEngine:
             prefill_tps = decode_tps = 0.0
             finish = "length"
             penalty = params.repetition_penalty if params.repetition_penalty > 1.0 else None
+            guard = LoopGuard() if params.loop_guard else None
             for r in mlx_vlm.stream_generate(
                 self._model,
                 self._proc,
@@ -100,6 +102,9 @@ class MLXVLMEngine:
                     break
                 if r.finish_reason is not None:
                     finish = r.finish_reason
+                    break
+                if guard is not None and r.token is not None and guard.feed(r.token):
+                    finish = "stop"
                     break
 
             channel.put(

@@ -171,6 +171,24 @@ def test_no_repetition_penalty_passes_none() -> None:
     sched.stop()
 
 
+def test_loop_guard_stops_runaway_repetition() -> None:
+    # A model stuck in a 3-token cycle for 36 tokens must be cut off, not run to the end.
+    sched = make_scheduler([[1, 2, 3] * 12])
+    ch = sched.submit([10], SamplingParams(max_tokens=200))
+    _, final = drain(ch)
+    assert final.finish_reason == "stop"
+    assert final.completion_tokens < 36  # stopped mid-loop, not the full script
+    sched.stop()
+
+
+def test_loop_guard_disabled_runs_full() -> None:
+    sched = make_scheduler([[1, 2, 3] * 12])
+    ch = sched.submit([10], SamplingParams(max_tokens=200, loop_guard=False))
+    _, final = drain(ch)
+    assert final.completion_tokens == 36  # ran the whole script
+    sched.stop()
+
+
 def test_counters_track_requests() -> None:
     sched = make_scheduler([[1]])
     ch = sched.submit([10], SamplingParams(max_tokens=4))

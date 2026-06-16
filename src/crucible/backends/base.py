@@ -20,6 +20,9 @@ class SamplingParams:
     # loops (and never emitting EOS). 1.0 disables it.
     repetition_penalty: float = 1.1
     repetition_context_size: int = 20
+    # Hard stop if generation collapses into a tight repetition loop (a safety net under the
+    # penalty, for weak models). Disable for intentionally repetitive output.
+    loop_guard: bool = True
     stop: list[str] = field(default_factory=list)
 
 

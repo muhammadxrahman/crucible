@@ -37,6 +37,7 @@ class Sampling(_Strict):
     top_p: float = Field(default=0.95, gt=0, le=1)
     repetition_penalty: float = Field(default=1.1, ge=1)
     repetition_context_size: int = Field(default=20, gt=0)
+    loop_guard: bool = True  # hard-stop runaway repetition loops
     max_tokens: int = Field(default=512, gt=0)
 
 
