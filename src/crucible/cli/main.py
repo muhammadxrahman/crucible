@@ -57,6 +57,9 @@ def serve(
     config: Path = typer.Option(DEFAULT_CONFIG, "--config", "-c", help="Path to models.yaml."),
     host: str = typer.Option("", "--host", help="Override server.host."),
     port: int = typer.Option(0, "--port", help="Override server.port."),
+    open_browser: bool = typer.Option(
+        True, "--open/--no-open", help="Open the web UI in a browser once the server is ready."
+    ),
 ) -> None:
     """Start the OpenAI-compatible gateway over the model manager (M2)."""
     import uvicorn
@@ -119,12 +122,38 @@ def serve(
             fg=typer.colors.CYAN,
         )
     application = create_app(manager, runtime, rag, sampling=reg.server.sampling)
+    ui_host = "127.0.0.1" if bind_host in ("0.0.0.0", "") else bind_host
+    url = f"http://{ui_host}:{bind_port}/"
     typer.secho(
-        f"serving {len(reg.models)} model(s) on http://{bind_host}:{bind_port} "
+        f"serving {len(reg.models)} model(s) on {url} "
         f"[resident: {manager.resident_models() or 'none (lazy)'}]",
         fg=typer.colors.GREEN,
     )
+    if open_browser:
+        _open_browser_when_ready(url)
     uvicorn.run(application, host=bind_host, port=bind_port, log_level="info")
+
+
+def _open_browser_when_ready(url: str) -> None:
+    """Open the web UI once the server is actually listening (polls /healthz in a thread)."""
+    import threading
+
+    def wait_and_open() -> None:
+        import time
+        import webbrowser
+
+        import httpx
+
+        health = url.rstrip("/") + "/healthz"
+        for _ in range(150):  # up to ~30s
+            try:
+                if httpx.get(health, timeout=1).status_code == 200:
+                    webbrowser.open(url)
+                    return
+            except httpx.HTTPError:
+                time.sleep(0.2)
+
+    threading.Thread(target=wait_and_open, daemon=True).start()
 
 
 @app.command()

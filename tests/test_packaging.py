@@ -34,6 +34,7 @@ def test_render_plist_runs_serve_at_login() -> None:
     assert "<string>/opt/homebrew/bin/uv</string>" in xml
     assert "<string>serve</string>" in xml
     assert "<string>config/models.yaml</string>" in xml
+    assert "<string>--no-open</string>" in xml  # login service must not pop a browser
     assert "<key>RunAtLoad</key>" in xml and "<true/>" in xml
     assert "<key>KeepAlive</key>" in xml
     assert "mlxd.err.log" in xml

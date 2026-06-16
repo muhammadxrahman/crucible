@@ -27,7 +27,8 @@ def render_plist(
     label: str = LABEL,
 ) -> str:
     """Render a LaunchAgent plist that runs `uv run mlxd serve` at login."""
-    args = [uv_path, "run", "mlxd", "serve", "--config", config]
+    # --no-open: a login service must not pop a browser window on every login.
+    args = [uv_path, "run", "mlxd", "serve", "--config", config, "--no-open"]
     arg_xml = "\n".join(f"      <string>{escape(a)}</string>" for a in args)
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"

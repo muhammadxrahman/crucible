@@ -16,6 +16,7 @@ RAG, vision, observability, and UI — built on top of `mlx-lm`, `mlx-vlm`, and
 - [What it can do](#what-it-can-do)
 - [Requirements](#requirements)
 - [Get started](#get-started)
+- [Running and stopping the server](#running-and-stopping-the-server)
 - [Use it: the web app](#use-it-the-web-app)
 - [Use it: the API](#use-it-the-api)
 - [Command-line reference](#command-line-reference)
@@ -89,10 +90,15 @@ bash scripts/build-ui.sh                  # build the web app (one time; skip if
 uv run mlxd serve -c config/dev.yaml      # start the server on the tiny model
 ```
 
-Then open **http://127.0.0.1:8000/** in your browser and start chatting.
+The server runs **in that terminal** — you'll see log lines, and it keeps running until you
+press **Ctrl-C**. It **opens the web app at http://127.0.0.1:8000/ in your browser
+automatically** once it's ready (pass `--no-open` to disable that).
 
 > The tiny model is fast but not smart (it will, for example, miscount letters). Use it to
 > confirm the setup; use the full models below for real answers.
+>
+> If you skipped the UI build step, the browser page at `/` won't load — that's expected.
+> Either run `bash scripts/build-ui.sh`, or just use the [API](#use-it-the-api).
 
 ### Full setup (the default 30B + vision + RAG)
 
@@ -104,7 +110,7 @@ watch the progress, then serve from cache:
 uv sync
 bash scripts/build-ui.sh
 uv run mlxd validate                      # sanity-check the config + show the active profile
-uv run mlxd pull                          # download all model weights, with progress
+uv run mlxd pull                          # download all model weights, with progress, be mindful of your download speeds
 uv run mlxd serve                         # start the server (loads from the local cache)
 ```
 
@@ -117,6 +123,44 @@ Tips:
   warning (the server still starts and that model loads on first use).
 - On a 16GB/24GB Mac, edit `config/models.yaml` to use smaller models; the active hardware
   profile is selected automatically (see [Configuration](#configuration)).
+
+---
+
+## Running and stopping the server
+
+There are two ways to run Crucible. **Pick one** — don't run both, or they'll fight over the
+port.
+
+**1. Manually (recommended for normal use).** Run it in a terminal:
+
+```bash
+uv run mlxd serve                  # or: -c config/dev.yaml
+```
+
+It stays in the foreground and opens the web app in your browser once it's ready (use
+`--no-open` to skip that). **Press `Ctrl-C` in that terminal to stop it.** That's the whole
+lifecycle — start, use, Ctrl-C.
+
+**2. As a background login service (optional).** `mlxd service install` registers a `launchd`
+agent that starts the server on login **and automatically restarts it** if it exits. This is
+convenient, but it changes how you stop it:
+
+```bash
+uv run mlxd service uninstall      # the ONLY way to stop the service
+```
+
+> **Important:** while the login service is installed, `kill` (or killing the PID from
+> `lsof`) **will not stop the server** — `launchd` immediately relaunches it. You must run
+> `mlxd service uninstall` (or `launchctl unload ~/Library/LaunchAgents/com.crucible.mlxd.plist`).
+> See [Run automatically on login](#run-automatically-on-login).
+
+**Useful checks:**
+
+```bash
+lsof -nP -iTCP:8000 -sTCP:LISTEN   # what is using the port
+uv run mlxd service status         # is the login service active?
+uv run mlxd serve --port 8080      # serve on a different port
+```
 
 ---
 
@@ -291,10 +335,12 @@ container):
 ```bash
 uv run mlxd service install      # writes + loads a LaunchAgent (RunAtLoad, KeepAlive)
 uv run mlxd service status       # check whether it is loaded
-uv run mlxd service uninstall    # remove it
+uv run mlxd service uninstall    # stop it and remove the agent
 ```
 
-Logs are written under `.crucible/logs/`.
+Because the agent uses `KeepAlive`, the server **restarts automatically** if it crashes or
+is killed — which also means a plain `kill` won't stop it. To actually stop it, run
+`mlxd service uninstall`. Logs are written under `.crucible/logs/`.
 
 ---
 
